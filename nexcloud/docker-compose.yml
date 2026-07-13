@@ -1,0 +1,53 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Stack NEXTCLOUD — /mnt/Holocron_sith/nexcloud/docker-compose.yml
+# Image ÉPINGLÉE nextcloud:33 (jamais :stable — évite le version-mismatch au reboot).
+# NB : reconstruit d'après l'état du projet (le compose original n'était pas dans
+#      le zip). Le mot de passe Postgres ci-dessous est une valeur par défaut à
+#      conserver telle quelle sur disque neuf (install auto au 1er boot).
+# ═══════════════════════════════════════════════════════════════════════════
+version: '3.8'
+
+services:
+
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: nextcloud
+      POSTGRES_USER: nextcloud
+      POSTGRES_PASSWORD: nextcloud_secret_2024
+    volumes:
+      - /mnt/Holocron_sith/nexcloud/pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:alpine
+    restart: always
+
+  nextcloud:
+    image: nextcloud:33            # ← ÉPINGLÉ. Ne jamais mettre :stable.
+    restart: always
+    ports:
+      - "8080:80"
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: nextcloud
+      POSTGRES_USER: nextcloud
+      POSTGRES_PASSWORD: nextcloud_secret_2024
+      REDIS_HOST: redis
+      NEXTCLOUD_ADMIN_USER: admin
+      NEXTCLOUD_ADMIN_PASSWORD: gougoul123
+      NEXTCLOUD_TRUSTED_DOMAINS: "192.168.1.4 localhost 192.168.1.4:8080"
+      NEXTCLOUD_DATA_DIR: /var/www/html/data
+    volumes:
+      # App + config Nextcloud
+      - /mnt/Holocron_sith/nexcloud/html:/var/www/html
+      # Données utilisateurs — HÔTE SÉPARÉ, monté aussi en RO dans le backend
+      # (webapp) pour le téléchargement des soumissions par les profs.
+      - /mnt/Holocron_sith/nexcloud/data:/var/www/html/data
+    depends_on:
+      - db
+      - redis
+
+networks:
+  default:
+    external: false

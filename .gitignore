@@ -1,0 +1,23 @@
+﻿# Dépendances
+node_modules/
+**/node_modules/
+
+# Données runtime (ne jamais versionner)
+mysql-data/
+**/mysql-data/
+nexcloud/pgdata/
+nexcloud/appdata/
+nexcloud/userdata/
+
+# Build
+frontend/build/
+**/build/
+
+# Logs & divers
+*.log
+boot.log
+.DS_Store
+
+# Secrets locaux (voir note ci-dessous)
+.env
+*.local

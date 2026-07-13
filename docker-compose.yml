@@ -1,0 +1,58 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Stack WEBAPP — /mnt/Holocron_sith/webapp/docker-compose.yml
+# Architecture v2 : data-root Docker custom + overlay2 (géré par holocron-boot.sh)
+# ═══════════════════════════════════════════════════════════════════════════
+version: '3.8'
+
+services:
+
+  mysql:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root1234
+      MYSQL_DATABASE: academic_nas
+      MYSQL_USER: academic_user
+      MYSQL_PASSWORD: academic1234
+    volumes:
+      # BIND-MOUNT PERSISTANT (Bug #4) — les données survivent au recreate du conteneur.
+      - /mnt/Holocron_sith/webapp/mysql-data:/var/lib/mysql
+      # init.sql ne s'exécute que si mysql-data est vide (1er boot / disque neuf)
+      - /mnt/Holocron_sith/webapp/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "3306:3306"
+
+  backend:
+    build: ./backend
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      DB_HOST: mysql
+      DB_USER: academic_user
+      DB_PASSWORD: academic1234
+      DB_NAME: academic_nas
+      NEXTCLOUD_URL: http://192.168.1.4:8080
+      NEXTCLOUD_ADMIN: admin
+      NEXTCLOUD_PASSWORD: TheGougoulHolocron8@
+      JWT_SECRET: holocron_secret_2024
+      NC_DATA_DIR: /nextcloud-data
+    volumes:
+      # Données Nextcloud en LECTURE SEULE — nécessaire au téléchargement prof
+      # des soumissions (lecture directe disque, contourne le blocage WebDAV
+      # cross-user de Nextcloud 33). Doit pointer sur le userdata du stack nexcloud.
+      - /mnt/Holocron_sith/nexcloud/userdata:/nextcloud-data:ro
+    depends_on:
+      - mysql
+
+  frontend:
+    build: ./frontend
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+networks:
+  default:
+    external: false
