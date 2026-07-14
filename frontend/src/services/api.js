@@ -24,13 +24,14 @@ export const getStats   = () => API.get('/users/stats');
 // ── Fichiers (Explorer) ──────────────────────────────────────────────────
 export const listFiles = (path = '/') => API.get(`/files/list?path=${encodeURIComponent(path)}`);
 
-export const uploadFile = (path, file, onProgress) => {
+export const uploadFile = (path, file, onProgress, signal) => {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('path', path);
   return API.post('/files/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    onUploadProgress: onProgress
+    onUploadProgress: onProgress,
+    signal
   });
 };
 

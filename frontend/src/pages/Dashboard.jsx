@@ -17,7 +17,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   getProfile, logout,
   listFiles, uploadFile, downloadFile, createFolder, deleteFile,
-  getQuota, getStats,
+  getQuota, getStats, getSharedFolders,
   listAssignments, createAssignment, submitAssignment,
   getMySubmissions, getReceivedSubmissions, downloadSubmission
 } from '../services/api';
@@ -52,18 +52,8 @@ const RECENT_FILES = [
   { icon:faTable,      name:'Planning_Révision_Examens.xlsx',  meta:'3j • 850 KB',  color:N.primary   },
   { icon:faFile,       name:'Notes_IA.txt',                    meta:'1h • 12 KB',   color:N.secondary },
 ];
-const SHARED_FOLDERS = [
-  { name:'Architecture OS',           files:45,  size:'12.4 GB', color:N.primary   },
-  { name:'Réseaux Avancés',           files:22,  size:'5.1 GB',  color:N.secondary },
-  { name:'Intelligence Artificielle', files:120, size:'28.9 GB', color:N.tertiary  },
-  { name:'Cybersécurité',             files:38,  size:'8.7 GB',  color:N.primary   },
-];
-const COURSE_FOLDERS = [
-  { name:'Architecture OS',           files:45,  size:'12.4 GB', color:N.primary,   fill:75  },
-  { name:'Réseaux Avancés',           files:22,  size:'5.1 GB',  color:N.secondary, fill:25  },
-  { name:'Intelligence Artificielle', files:120, size:'28.9 GB', color:N.tertiary,  fill:85  },
-  { name:'Archives 2023',             files:240, size:'145 GB',  color:N.onVariant, fill:100 },
-];
+// Couleurs attribuées cycliquement aux vrais dossiers partagés
+const FOLDER_COLORS = [N.primary, N.secondary, N.tertiary, N.onVariant];
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 const formatSize = (bytes) => {
@@ -213,6 +203,8 @@ export default function Dashboard() {
   const [profile, setProfile]   = useState(null);
   const [quota, setQuota]       = useState(null);   // { used, total, relative }
   const [stats, setStats]       = useState(null);   // { students, total }
+  const [sharedFolders, setSharedFolders] = useState([]); // Team Folders Cours-* réels
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   const [aiQuery, setAiQuery]   = useState('');
   const [aiAsked, setAiAsked]   = useState(false);
   const [openFolders, setOpenFolders] = useState({});
@@ -228,6 +220,7 @@ export default function Dashboard() {
   const [newFolder, setNewFolder]     = useState('');
   const [showNewFolder, setShowNewFolder] = useState(false);
   const fileInputRef                  = useRef(null);
+  const uploadControllerRef           = useRef(null); // AbortController de l'upload en cours
 
   // ── State Submissions ──────────────────────────────────────────────────────
   const [assignments, setAssignments] = useState([]);   // devoirs (étudiant)
@@ -260,6 +253,18 @@ export default function Dashboard() {
     if (tab === 'submissions') loadSubmissions();
   }, [tab, currentPath]);
 
+  // Détection responsive (empilement vertical sous 768px)
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // Vrais dossiers partagés (Team Folders Cours-*)
+  useEffect(() => {
+    getSharedFolders().then(r => setSharedFolders(r.data.folders || [])).catch(() => {});
+  }, []);
+
   // ── Handlers Explorer ───────────────────────────────────────────────────────
   const loadFiles = async (path) => {
     setFilesLoading(true);
@@ -270,11 +275,26 @@ export default function Dashboard() {
   const handleNavigate = (path) => setCurrentPath(path);
   const handleUpload = async (e) => {
     const file = e.target.files[0]; if (!file) return;
+    const controller = new AbortController();
+    uploadControllerRef.current = controller;
+    const targetPath = `${currentPath === '/' ? '' : currentPath}/${file.name}`;
     setUploading(true);
-    try { await uploadFile(currentPath, file, p => setUploadPct(Math.round(p.loaded*100/p.total))); await loadFiles(currentPath); }
-    catch (err) { console.error('Upload:', err); }
-    finally { setUploading(false); setUploadPct(0); e.target.value=''; }
+    try {
+      await uploadFile(currentPath, file, p => setUploadPct(Math.round(p.loaded*100/p.total)), controller.signal);
+      await loadFiles(currentPath);
+    } catch (err) {
+      if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') {
+        // Annulation volontaire → on tente de supprimer le fichier partiel
+        try { await deleteFile(targetPath); } catch (_) {}
+        await loadFiles(currentPath);
+      } else {
+        console.error('Upload:', err);
+      }
+    } finally {
+      setUploading(false); setUploadPct(0); uploadControllerRef.current = null; e.target.value='';
+    }
   };
+  const handleCancelUpload = () => uploadControllerRef.current?.abort();
   const handleDownload = async (filePath) => {
     try {
       const res = await downloadFile(filePath);
@@ -385,7 +405,7 @@ export default function Dashboard() {
           <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
             <div style={{ display:'flex', alignItems:'center', gap:'6px', padding:'6px 14px', background:N.surfaceLow, border:`1px solid ${N.outline}`, borderRadius:'99px', fontSize:'12px' }}>
               <span style={{ width:'8px', height:'8px', borderRadius:'50%', background:N.secondary, boxShadow:`0 0 8px ${N.secondary}60` }} />
-              <span style={{ color:N.onVariant }}>Serveur Opérationnel</span>
+              {!isMobile && <span style={{ color:N.onVariant }}>Serveur Opérationnel</span>}
             </div>
             <button style={{ width:'38px', height:'38px', background:N.surfaceHigh, border:`1px solid ${N.outline}`, borderRadius:'10px', color:N.onVariant, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
               <FontAwesomeIcon icon={faBell} style={{ fontSize:'15px' }} />
@@ -411,9 +431,9 @@ export default function Dashboard() {
         {tab === 'dashboard' && (
           <div>
             <AIWidget aiQuery={aiQuery} setAiQuery={setAiQuery} aiAsked={aiAsked} onAsk={handleAsk} />
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(12, 1fr)', gap:'20px' }}>
+            <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)', gap:'20px' }}>
 
-              <div style={{ gridColumn:'span 8' }}>
+              <div style={{ gridColumn: isMobile ? 'span 1' : 'span 8' }}>
                 <div style={{ ...glass({ padding:'20px' }) }}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'16px' }}>
                     <h3 style={{ color:N.primary, fontSize:'16px', fontWeight:'600', display:'flex', alignItems:'center', gap:'8px', margin:0 }}>
@@ -421,13 +441,13 @@ export default function Dashboard() {
                     </h3>
                     <button onClick={() => setTab('explorer')} style={{ background:'none', border:'none', color:N.primary, fontSize:'13px', cursor:'pointer', fontFamily:'Inter,sans-serif' }}>Tout voir</button>
                   </div>
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px' }}>
+                  <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:'10px' }}>
                     {RECENT_FILES.map((f,i) => <RecentFileCard key={i} item={f} />)}
                   </div>
                 </div>
               </div>
 
-              <div style={{ gridColumn:'span 4', display:'flex', flexDirection:'column', gap:'16px' }}>
+              <div style={{ gridColumn: isMobile ? 'span 1' : 'span 4', display:'flex', flexDirection:'column', gap:'16px' }}>
                 <div style={{ ...glass({ padding:'20px' }) }}>
                   <h3 style={{ color:N.onVariant, fontSize:'11px', fontWeight:'700', letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:'14px' }}>État du Système</h3>
                   <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'18px' }}>
@@ -457,24 +477,34 @@ export default function Dashboard() {
                 )}
               </div>
 
-              <div style={{ gridColumn:'span 12' }}>
+              <div style={{ gridColumn: isMobile ? 'span 1' : 'span 12' }}>
                 <h3 style={{ fontSize:'18px', fontWeight:'600', color:N.onSurface, marginBottom:'14px', display:'flex', alignItems:'center', gap:'8px' }}>
                   <FontAwesomeIcon icon={faFolder} />
                   {isProf ? 'Gestion des Cours' : 'Vos dossiers partagés'}
-                  {isProf && (
-                    <button onClick={() => setTab('explorer')} style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:'6px', padding:'8px 14px', background:N.primary, color:'#131e8c', border:'none', borderRadius:'8px', fontSize:'13px', fontWeight:'700', cursor:'pointer', fontFamily:'Inter,sans-serif' }}>
-                      <FontAwesomeIcon icon={faFolderPlus} style={{ fontSize:'12px' }} /> Nouveau Cours
-                    </button>
-                  )}
                 </h3>
-                <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(220px, 1fr))', gap:'14px' }}>
-                  {(isProf ? COURSE_FOLDERS : SHARED_FOLDERS).map((f,i) => <FolderCard key={i} folder={f} showBar={isProf} />)}
-                </div>
+                {sharedFolders.length === 0 ? (
+                  <div style={{ ...glass({ padding:'32px 24px', textAlign:'center' }) }}>
+                    <FontAwesomeIcon icon={faFolderOpen} style={{ color:N.onVariant, fontSize:'28px', marginBottom:'10px' }} />
+                    <p style={{ color:N.onSurface, fontSize:'14px', fontWeight:'600', margin:'0 0 4px' }}>Aucun dossier partagé pour le moment</p>
+                    <p style={{ color:N.onVariant, fontSize:'12px', margin:0 }}>Les cours partagés (Cours-*) apparaîtront ici une fois disponibles.</p>
+                  </div>
+                ) : (
+                  <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(220px, 1fr))', gap:'14px' }}>
+                    {sharedFolders.map((f,i) => (
+                      <FolderCard key={f.path||i} folder={{
+                        name: f.name,
+                        size: fmtGB(f.size),
+                        files: f.fileCount || 0,
+                        color: FOLDER_COLORS[i % FOLDER_COLORS.length]
+                      }} />
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Soumissions récentes (prof) — DONNÉES RÉELLES */}
               {isProf && (
-                <div style={{ gridColumn:'span 12' }}>
+                <div style={{ gridColumn: isMobile ? 'span 1' : 'span 12' }}>
                   <div style={{ ...glass({ padding:0, overflow:'hidden' }) }}>
                     <div style={{ padding:'18px 20px', borderBottom:`1px solid ${N.outline}30`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                       <h3 style={{ color:N.onSurface, fontSize:'16px', fontWeight:'600', margin:0 }}>Soumissions Récentes</h3>
@@ -543,10 +573,15 @@ export default function Dashboard() {
 
             {uploading && (
               <div style={{ marginBottom:'16px' }}>
-                <div style={{ width:'100%', background:N.surfaceTop, borderRadius:'99px', height:'4px', overflow:'hidden', marginBottom:'4px' }}>
+                <div style={{ width:'100%', background:N.surfaceTop, borderRadius:'99px', height:'4px', overflow:'hidden', marginBottom:'6px' }}>
                   <div style={{ width:`${uploadPct}%`, height:'100%', background:N.primary, borderRadius:'99px', transition:'width 0.3s' }} />
                 </div>
-                <p style={{ color:N.onVariant, fontSize:'12px', margin:0 }}>Upload en cours... {uploadPct}%</p>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'12px' }}>
+                  <p style={{ color:N.onVariant, fontSize:'12px', margin:0 }}>Upload en cours... {uploadPct}%</p>
+                  <button onClick={handleCancelUpload} style={{ display:'flex', alignItems:'center', gap:'6px', padding:'6px 12px', background:'rgba(255,180,171,0.1)', border:`1px solid rgba(255,180,171,0.25)`, borderRadius:'8px', color:N.error, fontSize:'12px', fontWeight:'600', cursor:'pointer', fontFamily:'Inter,sans-serif' }}>
+                    <FontAwesomeIcon icon={faXmark} style={{ fontSize:'12px' }} /> Annuler
+                  </button>
+                </div>
               </div>
             )}
 

@@ -196,21 +196,47 @@ exports.getQuota = async (req, res) => {
 
 // ── Dossiers partagés (Team Folders Cours-*) visibles par le user ─────────
 // Les Team Folders apparaissent à la racine WebDAV du user comme des dossiers.
-// On liste la racine et on filtre ceux dont le nom commence par "Cours".
+// On liste la racine avec les propriétés étendues Nextcloud (taille réelle du
+// dossier via oc:size + nombre de fichiers via nc:contained-file-count), puis
+// on filtre ceux dont le nom commence par "Cours-".
+const SHARED_PROPFIND = `<?xml version="1.0" encoding="UTF-8"?>
+<d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns" xmlns:nc="http://nextcloud.org/ns">
+  <d:prop>
+    <d:resourcetype/>
+    <oc:size/>
+    <nc:contained-file-count/>
+    <d:getlastmodified/>
+  </d:prop>
+</d:propfind>`;
+
 exports.getSharedFolders = async (req, res) => {
   try {
     const username = req.user.nextcloud_username;
+    const base     = `/remote.php/dav/files/${username}`;
     const response = await userWebdav(req)({
       method:  'PROPFIND',
-      url:     `/remote.php/dav/files/${username}/`,
+      url:     `${base}/`,
       headers: { 'Depth': '1', 'Content-Type': 'application/xml' },
-      data:    PROPFIND_BODY
+      data:    SHARED_PROPFIND
     });
-    const all = parseWebDAV(response.data, username, '/');
-    const folders = all
-      .filter(f => f.isDirectory && /^cours[-_ ]/i.test(f.name))
-      .map(f => ({ name: f.name, path: f.path, size: f.size }));
 
+    const folders = [];
+    const regex = /<d:response>([\s\S]*?)<\/d:response>/gi;
+    let m;
+    while ((m = regex.exec(response.data)) !== null) {
+      const block    = m[1];
+      const href     = decodeURIComponent((block.match(/<d:href>(.*?)<\/d:href>/i)||[])[1]||'');
+      const relative = href.replace(base, '').replace(/\/$/, '');
+      const name     = relative.split('/').pop();
+      if (!name || !/^cours[-_ ]/i.test(name)) continue;   // seulement les Team Folders Cours-*
+      folders.push({
+        name,
+        path:      relative,
+        size:      parseInt((block.match(/<oc:size>(.*?)<\/oc:size>/i)||[])[1]||'0'),
+        fileCount: parseInt((block.match(/<nc:contained-file-count>(.*?)<\/nc:contained-file-count>/i)||[])[1]||'0'),
+        modified:  (block.match(/<d:getlastmodified>(.*?)<\/d:getlastmodified>/i)||[])[1]||''
+      });
+    }
     res.json({ success: true, folders });
   } catch (error) {
     console.error('getSharedFolders:', error.response?.status, error.message);
