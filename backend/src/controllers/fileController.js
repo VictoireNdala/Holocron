@@ -1,8 +1,13 @@
 const axios  = require('axios');
 const multer = require('multer');
+const fs     = require('fs');
+const nodePath = require('path'); // nommé nodePath : `path` est déjà utilisé comme nom de variable (req.query.path)
 const { nextcloudClient } = require('../config/nextcloud'); // client OCS admin
 
-const NC_URL = process.env.NEXTCLOUD_URL || 'http://192.168.1.4:8080';
+const NC_URL  = process.env.NEXTCLOUD_URL || 'http://192.168.1.4:8080';
+// Données Nextcloud montées en lecture seule (voir docker-compose.yml) — même
+// volume que submissionController, utilisé pour le téléchargement direct (B3).
+const NC_DATA = process.env.NC_DATA_DIR || '/nextcloud-data';
 
 // ── Client WebDAV PER-USER ────────────────────────────────────────────────
 // Nextcloud 33 bloque l'écriture cross-user par l'admin. On agit donc TOUJOURS
@@ -117,11 +122,33 @@ exports.uploadFile = async (req, res) => {
 };
 
 // ── Télécharger un fichier ────────────────────────────────────────────────
+// B3 — téléchargement direct des gros fichiers : pour un fichier de l'espace
+// PERSONNEL (pas un Team Folder Cours-*, stocké ailleurs sur disque via
+// groupfolders), on lit directement le disque monté en lecture seule — même
+// technique déjà validée par submissionController.downloadSubmission — au
+// lieu de faire transiter chaque octet par un aller-retour WebDAV vers
+// Nextcloud. Repli WebDAV si le fichier n'est pas trouvé sur le disque
+// (Team Folder, ou décalage de layout imprévu) : comportement inchangé.
 exports.downloadFile = async (req, res) => {
-  try {
-    const { path } = req.query;
-    const username = req.user.nextcloud_username;
+  const { path } = req.query;
+  const username = req.user.nextcloud_username;
 
+  if (path && !/^\/?cours[-_]/i.test(path)) {
+    const baseDir  = nodePath.join(NC_DATA, username, 'files');
+    const diskPath = nodePath.join(baseDir, path);
+    // Confinement : le disque n'est plus protégé par les permissions WebDAV
+    // de Nextcloud ici, donc on vérifie nous-mêmes qu'on reste dans le
+    // dossier de l'utilisateur avant de lire quoi que ce soit.
+    const contained = diskPath === baseDir || diskPath.startsWith(baseDir + nodePath.sep);
+    if (contained && fs.existsSync(diskPath) && fs.statSync(diskPath).isFile()) {
+      const filename = encodeURIComponent(path.split('/').pop());
+      res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${filename}`);
+      res.setHeader('Content-Type', 'application/octet-stream');
+      return fs.createReadStream(diskPath).pipe(res);
+    }
+  }
+
+  try {
     const response = await userWebdav(req)({
       method:       'GET',
       url:          `/remote.php/dav/files/${username}${path}`,
@@ -158,10 +185,18 @@ exports.createFolder = async (req, res) => {
 };
 
 // ── Supprimer un fichier/dossier ─────────────────────────────────────────
+// Suppression équilibrée (B2) : un étudiant peut supprimer dans son propre
+// espace, mais jamais dans les Team Folders de cours (protégés en lecture
+// seule côté Nextcloud de toute façon, mais on renvoie un message clair
+// plutôt que de laisser échouer le WebDAV en 403 brut).
 exports.deleteFile = async (req, res) => {
   try {
     const { path } = req.body;
     const username = req.user.nextcloud_username;
+
+    if (req.user.role === 'etudiant' && /^\/?cours[-_]/i.test(path || '')) {
+      return res.status(403).json({ success: false, message: 'Suppression impossible dans un dossier de cours' });
+    }
 
     await userWebdav(req)({ method: 'DELETE', url: `/remote.php/dav/files/${username}${path}` });
     res.json({ success: true, message: 'Supprimé' });
@@ -241,5 +276,104 @@ exports.getSharedFolders = async (req, res) => {
   } catch (error) {
     console.error('getSharedFolders:', error.response?.status, error.message);
     res.status(500).json({ success: false, message: 'Erreur dossiers partagés' });
+  }
+};
+
+// ── Corbeille (B1) — API trashbin native Nextcloud ─────────────────────────
+// Un DELETE WebDAV sur /files/{username}/ déplace déjà l'élément dans la
+// corbeille (app trashbin, activée par défaut) : deleteFile() ci-dessus
+// alimente donc cette corbeille sans rien changer. Ces routes exposent
+// lister/restaurer/purger via l'API DAV dédiée /remote.php/dav/trashbin/.
+const TRASH_PROPFIND = `<?xml version="1.0" encoding="UTF-8"?>
+<d:propfind xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns">
+  <d:prop>
+    <d:getcontentlength/><d:getlastmodified/><d:resourcetype/>
+    <nc:trashbin-filename/><nc:trashbin-original-location/><nc:trashbin-deletion-time/>
+  </d:prop>
+</d:propfind>`;
+
+exports.listTrash = async (req, res) => {
+  try {
+    const username = req.user.nextcloud_username;
+    const base     = `/remote.php/dav/trashbin/${username}/trash`;
+
+    const response = await userWebdav(req)({
+      method:  'PROPFIND',
+      url:     `${base}/`,
+      headers: { 'Depth': '1', 'Content-Type': 'application/xml' },
+      data:    TRASH_PROPFIND
+    });
+
+    const items = [];
+    const regex = /<d:response>([\s\S]*?)<\/d:response>/gi;
+    let m;
+    while ((m = regex.exec(response.data)) !== null) {
+      const block    = m[1];
+      const href     = decodeURIComponent((block.match(/<d:href>(.*?)<\/d:href>/i)||[])[1]||'');
+      const relative = href.replace(base, '').replace(/\/$/, '');
+      if (!relative) continue; // le dossier corbeille lui-même
+
+      items.push({
+        trashPath:    relative,
+        name:         (block.match(/<nc:trashbin-filename>(.*?)<\/nc:trashbin-filename>/i)||[])[1] || relative.split('/').pop(),
+        originalPath: (block.match(/<nc:trashbin-original-location>(.*?)<\/nc:trashbin-original-location>/i)||[])[1] || '',
+        deletedAt:    parseInt((block.match(/<nc:trashbin-deletion-time>(.*?)<\/nc:trashbin-deletion-time>/i)||[])[1]||'0'),
+        isDirectory:  /<d:collection\s*\/>/i.test(block),
+        size:         parseInt((block.match(/<d:getcontentlength>(.*?)<\/d:getcontentlength>/i)||[])[1]||'0')
+      });
+    }
+
+    items.sort((a, b) => b.deletedAt - a.deletedAt);
+    res.json({ success: true, items });
+  } catch (error) {
+    console.error('listTrash:', error.response?.status, error.message);
+    res.status(500).json({ success: false, message: 'Erreur listage corbeille' });
+  }
+};
+
+exports.restoreFromTrash = async (req, res) => {
+  try {
+    const { trashPath } = req.body;
+    if (!trashPath) return res.status(400).json({ success: false, message: 'trashPath requis' });
+
+    const username    = req.user.nextcloud_username;
+    const destination = `${NC_URL}/remote.php/dav/trashbin/${username}/restore${trashPath}`;
+
+    await userWebdav(req)({
+      method:  'MOVE',
+      url:     `/remote.php/dav/trashbin/${username}/trash${trashPath}`,
+      headers: { Destination: destination }
+    });
+    res.json({ success: true, message: 'Restauré' });
+  } catch (error) {
+    console.error('restoreFromTrash:', error.response?.status, error.message);
+    res.status(500).json({ success: false, message: 'Erreur restauration' });
+  }
+};
+
+// Purger un élément précis de la corbeille (suppression définitive)
+exports.purgeTrashItem = async (req, res) => {
+  try {
+    const { trashPath } = req.body;
+    if (!trashPath) return res.status(400).json({ success: false, message: 'trashPath requis' });
+
+    const username = req.user.nextcloud_username;
+    await userWebdav(req)({ method: 'DELETE', url: `/remote.php/dav/trashbin/${username}/trash${trashPath}` });
+    res.json({ success: true, message: 'Supprimé définitivement' });
+  } catch (error) {
+    console.error('purgeTrashItem:', error.response?.status, error.message);
+    res.status(500).json({ success: false, message: 'Erreur purge' });
+  }
+};
+
+// Vider entièrement la corbeille
+exports.emptyTrash = async (req, res) => {
+  try {
+    const username = req.user.nextcloud_username;
+    await userWebdav(req)({ method: 'DELETE', url: `/remote.php/dav/trashbin/${username}/trash/` });
+    res.json({ success: true, message: 'Corbeille vidée' });
+  } catch (error) {
+    console.error('emptyTrash:', error.response?.status, error.message);
+    res.status(500).json({ success: false, message: 'Erreur vidage corbeille' });
   }
 };

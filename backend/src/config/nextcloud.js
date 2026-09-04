@@ -56,9 +56,23 @@ const setUserQuota = async (username, quota) => {
   }
 };
 
+// Changer le mot de passe Nextcloud d'un utilisateur (OCS, client admin)
+const setUserPassword = async (username, password) => {
+  try {
+    const response = await nextcloudClient.put(
+      `/ocs/v1.php/cloud/users/${username}`,
+      { key: 'password', value: password }
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(`Erreur changement mot de passe Nextcloud: ${error.message}`);
+  }
+};
+
 module.exports = {
   nextcloudClient,
   createNextcloudUser,
   addUserToGroup,
-  setUserQuota
+  setUserQuota,
+  setUserPassword
 };

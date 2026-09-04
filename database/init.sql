@@ -21,6 +21,10 @@ CREATE TABLE matricules (
 -- nc_password : mot de passe EN CLAIR, requis pour le WebDAV per-user
 -- (Nextcloud 33 bloque l'écriture cross-user par l'admin). C'est un choix
 -- assumé pour ce contexte campus local et fermé.
+-- is_admin/admin_level : Panel Admin avancé (D2) — voir DECISIONS.md
+-- D-2026-09-04-05. Pas de rôle "admin" séparé : un compte etudiant/professeur/
+-- assistant peut en plus être admin (super ou simple, permissions à la carte
+-- dans admin_permissions ci-dessous).
 CREATE TABLE users (
     id                 INT AUTO_INCREMENT PRIMARY KEY,
     matricule          VARCHAR(20) UNIQUE NOT NULL,
@@ -33,6 +37,8 @@ CREATE TABLE users (
     filiere            VARCHAR(50),
     nextcloud_username VARCHAR(100),
     is_active          BOOLEAN DEFAULT TRUE,
+    is_admin           BOOLEAN DEFAULT FALSE,
+    admin_level        ENUM('super','simple') DEFAULT NULL,
     created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (matricule) REFERENCES matricules(matricule)
 );
@@ -73,6 +79,108 @@ CREATE TABLE submissions (
     FOREIGN KEY (etudiant_id)   REFERENCES users(id)       ON DELETE CASCADE
 );
 
+-- ── Permissions admin déléguées (Panel Admin avancé, D2) ──────────────────────
+-- Voir DECISIONS.md D-2026-09-04-05. Un super admin (users.admin_level='super')
+-- a tous les droits implicitement ; un admin simple reçoit ces permissions
+-- une à une.
+CREATE TABLE admin_permissions (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    user_id     INT NOT NULL,
+    permission  ENUM('verifier_logiciels','moderer_communautaire','gerer_matricules',
+                      'gerer_utilisateurs','gerer_dossiers','voir_logs') NOT NULL,
+    granted_by  INT NOT NULL,
+    granted_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_user_permission (user_id, permission),
+    FOREIGN KEY (user_id)    REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (granted_by) REFERENCES users(id)
+);
+
+-- ── Journal d'activité (traçabilité, D2) ──────────────────────────────────────
+CREATE TABLE activity_logs (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    user_id    INT NOT NULL,
+    action     VARCHAR(50) NOT NULL,
+    cible_type VARCHAR(50) DEFAULT NULL,
+    cible_id   VARCHAR(100) DEFAULT NULL,
+    details    TEXT DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- ── Facultés / niveaux / filières (classification Espace communautaire, D1) ──
+-- Voir DECISIONS.md D-2026-09-04-01. Réutilisées aussi par les dossiers
+-- prioritaires (D2, community_priority_folders).
+CREATE TABLE faculties (
+    id  INT AUTO_INCREMENT PRIMARY KEY,
+    nom VARCHAR(150) UNIQUE NOT NULL
+);
+
+CREATE TABLE levels (
+    id    INT AUTO_INCREMENT PRIMARY KEY,
+    nom   VARCHAR(50) UNIQUE NOT NULL,   -- L1..L5
+    ordre INT NOT NULL
+);
+
+CREATE TABLE faculty_filieres (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    faculty_id INT NOT NULL,
+    nom        VARCHAR(150) NOT NULL,
+    FOREIGN KEY (faculty_id) REFERENCES faculties(id) ON DELETE CASCADE
+);
+
+-- ── Dossiers prioritaires (D2) — voir DECISIONS.md D-2026-09-04-06 ───────────
+-- Un attribut sur un regroupement facette (faculté/filière/niveau), pas un
+-- type de dossier séparé.
+CREATE TABLE community_priority_folders (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    faculty_id  INT NOT NULL,
+    filiere_id  INT DEFAULT NULL,
+    level_id    INT DEFAULT NULL,
+    is_priority BOOLEAN DEFAULT TRUE,
+    created_by  INT NOT NULL,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (faculty_id) REFERENCES faculties(id)        ON DELETE CASCADE,
+    FOREIGN KEY (filiere_id) REFERENCES faculty_filieres(id) ON DELETE CASCADE,
+    FOREIGN KEY (level_id)   REFERENCES levels(id)           ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id)
+);
+
+-- ── Espace libre communautaire (D1) — voir DECISIONS.md D-2026-09-04-01 à 04 ─
+CREATE TABLE community_resources (
+    id                   INT AUTO_INCREMENT PRIMARY KEY,
+    titre                VARCHAR(200) NOT NULL,
+    description          TEXT,
+    categorie            ENUM('Cours','Logiciel','Media','Autre') NOT NULL,
+    faculty_id           INT DEFAULT NULL,   -- NULL = "Général / toutes facultés"
+    level_id             INT DEFAULT NULL,   -- NULL = "Tous niveaux"
+    cover_image_path     VARCHAR(500) DEFAULT NULL,
+    fichier_path         VARCHAR(500) NOT NULL,
+    fichier_nom          VARCHAR(255) NOT NULL,
+    taille               BIGINT DEFAULT 0,
+    uploader_id          INT NOT NULL,
+    downloads_count      INT DEFAULT 0,
+    verification_status  ENUM('non_concerne','non_verifie','verifie','dangereux') DEFAULT 'non_concerne',
+    verified_by          INT DEFAULT NULL,
+    verified_at          TIMESTAMP NULL DEFAULT NULL,
+    status               ENUM('visible','masque') DEFAULT 'visible',
+    created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (faculty_id)  REFERENCES faculties(id) ON DELETE SET NULL,
+    FOREIGN KEY (level_id)    REFERENCES levels(id)    ON DELETE SET NULL,
+    FOREIGN KEY (uploader_id) REFERENCES users(id),
+    FOREIGN KEY (verified_by) REFERENCES users(id)
+);
+
+-- Signalements d'une ressource communautaire (POST /community/resources/:id/report)
+CREATE TABLE community_reports (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    resource_id INT NOT NULL,
+    reporter_id INT NOT NULL,
+    raison      TEXT,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (resource_id) REFERENCES community_resources(id) ON DELETE CASCADE,
+    FOREIGN KEY (reporter_id) REFERENCES users(id)
+);
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- SEED — matricules
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -100,3 +208,24 @@ INSERT INTO matricules (matricule, nom, prenom, role, filiere) VALUES
 ('ASS-2024003',  'Tambwe',                 'Gad',      'assistant',  NULL),
 ('ASS-2024004',  'Kabwe',                  'Ortega',   'assistant',  NULL),
 ('ASS-2024005',  'Ilunga',                 'Godwill',  'assistant',  NULL);
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- SEED — niveaux, faculté et filières (Espace communautaire, D1)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+INSERT INTO levels (nom, ordre) VALUES
+  ('L1', 1), ('L2', 2), ('L3', 3), ('L4', 4), ('L5', 5);
+
+INSERT INTO faculties (nom) VALUES ('Sciences Informatiques');
+INSERT INTO faculty_filieres (faculty_id, nom)
+  SELECT id, 'Genie Logiciel' FROM faculties WHERE nom = 'Sciences Informatiques';
+INSERT INTO faculty_filieres (faculty_id, nom)
+  SELECT id, 'Intelligence Artificielle' FROM faculties WHERE nom = 'Sciences Informatiques';
+INSERT INTO faculty_filieres (faculty_id, nom)
+  SELECT id, 'Systemes Informatiques' FROM faculties WHERE nom = 'Sciences Informatiques';
+
+-- Victoire = super admin (porteuse du projet / administratrice système).
+-- Sans effet tant qu'elle ne s'est pas inscrite (la table users est peuplée à
+-- l'inscription, pas ici) — la migration manuelle (database/migrations/) fait
+-- le même UPDATE pour la base déjà peuplée en production.
+UPDATE users SET is_admin = TRUE, admin_level = 'super' WHERE matricule = 'ETU-20244936';

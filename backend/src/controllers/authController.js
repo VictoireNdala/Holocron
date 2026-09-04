@@ -1,7 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt    = require('jsonwebtoken');
 const db     = require('../config/db');
-const { createNextcloudUser, addUserToGroup, setUserQuota } = require('../config/nextcloud');
+const { createNextcloudUser, addUserToGroup, setUserQuota, setUserPassword } = require('../config/nextcloud');
 
 // Quotas par rôle (état 12 juillet : étudiant 2 GB, prof 10 GB, assistant 5 GB)
 const QUOTA = { etudiant: '2 GB', professeur: '10 GB', assistant: '5 GB' };
@@ -158,6 +158,51 @@ exports.login = async (req, res) => {
   } catch (error) {
     console.error('login:', error.message);
     res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+};
+
+// ── Changement de mot de passe (C1) ─────────────────────────────────────────
+// Met à jour le mot de passe à 3 endroits en même temps : Nextcloud (source
+// de vérité pour le WebDAV per-user), users.password (hash, login portail) et
+// users.nc_password (clair, requis par userWebdav() dans fileController).
+// Ordre volontaire : Nextcloud d'abord — si ça échoue, on ne touche pas la
+// BDD, pour ne jamais désynchroniser nc_password du vrai mot de passe NC.
+exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ success: false, message: 'Mot de passe actuel et nouveau requis' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: 'Le nouveau mot de passe doit contenir au moins 6 caractères' });
+    }
+
+    const [rows] = await db.execute(
+      'SELECT password, nextcloud_username FROM users WHERE id = ?',
+      [req.user.id]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
+    }
+    const user = rows[0];
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: 'Mot de passe actuel incorrect' });
+    }
+
+    await setUserPassword(user.nextcloud_username, newPassword);
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+    await db.execute(
+      'UPDATE users SET password = ?, nc_password = ? WHERE id = ?',
+      [hashedPassword, newPassword, req.user.id]
+    );
+
+    res.json({ success: true, message: 'Mot de passe changé avec succès' });
+  } catch (error) {
+    console.error('changePassword:', error.message);
+    res.status(500).json({ success: false, message: 'Erreur lors du changement de mot de passe' });
   }
 };
 
