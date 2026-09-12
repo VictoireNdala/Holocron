@@ -1,5 +1,8 @@
+const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const db = require('../config/db');
 const { logActivity } = require('../utils/activityLog');
+const { setUserPassword } = require('../config/nextcloud');
 
 const VALID_PERMISSIONS = [
   'verifier_logiciels', 'moderer_communautaire', 'gerer_matricules',
@@ -227,6 +230,39 @@ exports.listUsers = async (req, res) => {
   } catch (error) {
     console.error('listUsers:', error.message);
     res.status(500).json({ success: false, message: 'Erreur liste utilisateurs' });
+  }
+};
+
+// ── Réinitialisation de mot de passe par un admin (utilisateur bloqué qui a
+// perdu son mot de passe, ne peut donc pas passer par changePassword qui
+// exige l'ancien). Même ordre Nextcloud-d'abord que changePassword (voir
+// authController) pour ne jamais désynchroniser nc_password du vrai mot de
+// passe NC. Le mot de passe temporaire n'est renvoyé qu'une fois dans cette
+// réponse — à communiquer à l'utilisateur hors-bande (jamais stocké en clair
+// nulle part d'autre que nc_password, déjà un choix assumé du projet).
+exports.resetUserPassword = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const [rows] = await db.execute('SELECT nextcloud_username FROM users WHERE id = ?', [userId]);
+    if (rows.length === 0) return res.status(404).json({ success: false, message: 'Utilisateur introuvable' });
+
+    const tempPassword = crypto.randomBytes(9).toString('base64').replace(/[+/=]/g, '') + 'Aa1!';
+
+    await setUserPassword(rows[0].nextcloud_username, tempPassword);
+
+    const hashedPassword = await bcrypt.hash(tempPassword, 12);
+    await db.execute(
+      'UPDATE users SET password = ?, nc_password = ? WHERE id = ?',
+      [hashedPassword, tempPassword, userId]
+    );
+    await db.execute('DELETE FROM sessions WHERE user_id = ?', [userId]); // force une reconnexion avec le nouveau mot de passe
+
+    await logActivity(req.user.id, 'reinitialiser_mot_de_passe', 'user', userId);
+
+    res.json({ success: true, message: 'Mot de passe réinitialisé', tempPassword });
+  } catch (error) {
+    console.error('resetUserPassword:', error.message);
+    res.status(500).json({ success: false, message: 'Erreur réinitialisation du mot de passe' });
   }
 };
 

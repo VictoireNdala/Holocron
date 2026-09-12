@@ -127,6 +127,7 @@ tables supplémentaires :
 | `community_categories` | Catégories de ressources (id, nom, `is_logiciel`, ordre) — **nouvelle table, Axe F6/D-2026-09-12-04** ; `is_logiciel` identifie PAR FLAG (pas par libellé) la catégorie spéciale pour les badges de vérification, renommable sans casser la logique |
 | `community_resources` | id, titre, description, categorie (**VARCHAR libre depuis le 2026-09-12**, plus un ENUM — voir `community_categories` pour les valeurs proposées), faculty_id (nullable = "Général/toutes facultés"), level_id (nullable = "Tous niveaux"), cover_image_path (upload manuel, facultatif), fichier_path, fichier_nom, taille, uploader_id, downloads_count, verification_status (non_concerne/non_verifie/verifie/dangereux), verified_by, verified_at, status (visible/masque), created_at |
 | `community_reports` | id, resource_id, reporter_id, raison, created_at — signalements (`POST .../report`) |
+| `notifications` | id, user_id, type, title, message, link, is_read, created_at — **nouvelle table, Axe D3/G8 (2026-09-12)**, fan-out à l'écriture (une ligne par destinataire) |
 
 Classification par **3 facettes combinables** (Faculté / Niveau / Catégorie),
 pas de dossiers imbriqués — voir DECISIONS.md D-2026-09-04-01. Quota de
@@ -139,6 +140,17 @@ voir section 6), écriture ouverte à tous les rôles, sous-dossiers par
 catégorie (`/Communautaire/{Cours|Logiciels|Medias|Autre}/{resource_id}_{nom}`,
 + `/Communautaire/_covers/` pour les images de couverture), créés
 automatiquement par le backend au premier dépôt (MKCOL défensif).
+
+**D3/G8 fait (2026-09-12) :** notifications (cloche) — `notifyFiliere`
+(nouveau devoir → étudiants de la filière ciblée), `notifyUser` (rendu reçu
+→ professeur propriétaire du devoir), `notifyAllExcept` (dépôt
+communautaire → tous les utilisateurs actifs sauf l'auteur), helpers dans
+`backend/src/utils/notify.js`. Endpoints `GET /api/notifications`,
+`PATCH /api/notifications/:id/read`, `PATCH /api/notifications/read-all`.
+Frontend : composant `NotificationBell` (badge non-lus, panneau déroulant),
+polling 30s. **Migration séparée à exécuter manuellement** :
+`database/migrations/2026-09-12_notifications.sql` (pas encore appliquée
+en production).
 
 **F7 fait (2026-09-12) :** les dossiers prioritaires apparaissent
 désormais dans une section dédiée en tête du catalogue (`GET
@@ -189,10 +201,22 @@ manuellement ; à surveiller si le compte est recréé de nouveau.
 | MySQL app | `academic_user` | `academic1234` (base `academic_nas`) |
 | MySQL root | `root` | `root1234` |
 | Postgres (Nextcloud) | `nextcloud` | `nextcloud123` |
-| JWT secret | — | `holocron_secret_2024` |
+| JWT secret | — | `holocron_secret_2024` **(⚠️ à changer, voir note ci-dessous)** |
 | SSH serveur | `truenas_admin` @ `192.168.1.4` | clé SSH (`~/.ssh/id_ed25519`) |
 
 > ⚠️ Si un identifiant change, mettre à jour cette table immédiatement.
+
+> **⚠️ Action manuelle requise (Axe G3, 2026-09-12) :** le backend refuse
+> désormais de démarrer si `JWT_SECRET` n'est pas défini dans
+> l'environnement (voir `backend/src/config/jwt.js`) — l'ancien fallback
+> silencieux en dur dans le code a été supprimé. `docker-compose.yml`
+> définit toujours `JWT_SECRET: holocron_secret_2024` pour ne pas casser
+> le prochain déploiement, mais cette valeur reste faible et connue de
+> quiconque a accès au dépôt. Victoire doit la remplacer par une valeur
+> forte et unique dans `docker-compose.yml` — attention, changer cette
+> valeur déconnecte immédiatement tous les utilisateurs actifs (jetons JWT
+> existants invalidés), à faire à un moment approprié plutôt qu'en pleine
+> journée d'usage.
 
 ---
 
@@ -262,6 +286,17 @@ semaine** (mais faisant partie du même build validé globalement) :
 - Téléchargement direct des gros fichiers (lecture disque, espace personnel).
 - API de changement de mot de passe.
 
+**Axe G codé le 2026-09-12, build vérifié, PAS testé contre le vrai
+Nextcloud/MySQL de production :**
+- Rate limiting (`express-rate-limit`), en-têtes `helmet`, durcissement
+  `JWT_SECRET` (fail-fast, voir section 5).
+- Pagination du catalogue communautaire, renommer/déplacer un fichier
+  (Explorateur), recherche locale dans "Mes fichiers".
+- Réinitialisation de mot de passe par un admin (`POST
+  /admin/users/:userId/reset-password`).
+- Notifications (cloche) — voir section 4 pour le détail, migration
+  `2026-09-12_notifications.sql` non encore appliquée en production.
+
 ## 8. Fonctionnalités PAS encore implémentées / correctifs connus (à faire)
 
 Voir le détail et l'ordre dans `ROADMAP.md` (Axe B0 et Axe F, retour d'usage
@@ -277,7 +312,8 @@ du 2026-09-12). Liste de référence :
   "Cours partagés", **taxonomie Espace communautaire entièrement
   dynamique** (le plus structurant), dossiers prioritaires invisibles dans
   le catalogue, descriptions d'aide sur le Panel Admin.
-- Notifications (cloche), page stockage dédiée.
+- Page stockage dédiée (D4). (Notifications/cloche : codées, voir Axe G/D3
+  ci-dessus et section 7 — reste à déployer et tester réellement.)
 - Nom de domaine local (`holocron.local`).
 - Redondance renforcée (miroir ZFS, snapshots planifiés, SMART) — toujours
   un seul disque en stripe, aucune redondance depuis la migration du 2026-09-12.

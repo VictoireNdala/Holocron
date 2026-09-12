@@ -2,6 +2,7 @@ const axios  = require('axios');
 const multer = require('multer');
 const db     = require('../config/db');
 const { logActivity } = require('../utils/activityLog');
+const { notifyAllExcept } = require('../utils/notify');
 
 const NC_URL = process.env.NEXTCLOUD_URL || 'http://192.168.1.4:8080';
 
@@ -114,6 +115,17 @@ exports.listResources = async (req, res) => {
                    : sort === 'ancien'   ? 'cr.created_at ASC'
                    : 'cr.created_at DESC'; // 'recent' par défaut
 
+    // Pagination — le catalogue grossit avec chaque dépôt, jamais de limite
+    // avant ce correctif (risque de payload/temps de requête non borné).
+    const page  = Math.max(1, parseInt(req.query.page, 10)  || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const offset = (page - 1) * limit;
+
+    const [[{ total }]] = await db.execute(
+      `SELECT COUNT(*) AS total FROM community_resources cr WHERE ${clauses.join(' AND ')}`,
+      params
+    );
+
     const [rows] = await db.execute(
       `SELECT cr.*, f.nom AS faculty_nom, l.nom AS level_nom, u.nom AS uploader_nom, u.prenom AS uploader_prenom
        FROM community_resources cr
@@ -121,10 +133,15 @@ exports.listResources = async (req, res) => {
        LEFT JOIN levels l    ON l.id = cr.level_id
        JOIN users u          ON u.id = cr.uploader_id
        WHERE ${clauses.join(' AND ')}
-       ORDER BY ${orderBy}`,
-      params
+       ORDER BY ${orderBy}
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
     );
-    res.json({ success: true, resources: rows });
+    res.json({
+      success: true,
+      resources: rows,
+      pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) }
+    });
   } catch (error) {
     console.error('listResources:', error.message);
     res.status(500).json({ success: false, message: 'Erreur liste ressources' });
@@ -219,6 +236,14 @@ exports.createResource = async (req, res) => {
       [fichierPath, coverPath, resourceId]
     );
     await logActivity(req.user.id, 'upload', 'community_resource', resourceId);
+
+    const uploaderNom = `${req.user.prenom || ''} ${req.user.nom || ''}`.trim();
+    await notifyAllExcept(req.user.id, {
+      type: 'depot_communautaire',
+      title: 'Nouvelle ressource communautaire',
+      message: `${uploaderNom || 'Quelqu\'un'} a déposé « ${titre} »`,
+      link: 'community'
+    });
 
     res.status(201).json({ success: true, message: 'Ressource déposée', id: resourceId });
   } catch (error) {

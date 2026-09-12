@@ -101,11 +101,24 @@
   tout en gagnant les infos réelles et précieuses de la migration disque
   et du premier usage réel. Fusion des deux versions plutôt qu'écrasement
   — voir note dans `CONTEXT.md` section 12 pour la leçon retenue.
-- **A faire :** **B0 en priorité absolue** (rollback `register`, voir
+- **Fait (2026-09-12, audit + recommandations) :** audit sécurité/fiabilité
+  du système existant à la demande de Victoire, recommandations codées
+  dans la foulée (**Axe G, nouveau** — voir plus bas) : rate limiting
+  (`express-rate-limit`), en-têtes de sécurité HTTP (`helmet`), durcissement
+  `JWT_SECRET` (échec explicite au démarrage si absent, plus de valeur par
+  défaut faible), pagination du catalogue communautaire, renommer/déplacer
+  un fichier dans l'Explorateur (WebDAV MOVE), recherche locale dans "Mes
+  fichiers", réinitialisation de mot de passe par un admin, et **D3
+  Notifications** (cloche + panneau, 3 évènements : nouveau devoir, rendu
+  reçu, dépôt communautaire). Build de production vérifié à chaque étape ;
+  **pas encore testé contre le vrai serveur/la vraie base**.
+- **A faire :** **B0 reste en priorité absolue** (rollback `register`, voir
   DECISIONS.md D-2026-09-12-01 et CONTEXT.md piège #13) — bug actif qui a
-  déjà coûté des heures de diagnostic. Puis Axe F dans l'ordre suggéré plus
-  bas (F1/F5 rapides d'abord). Corriger aussi le montage trop large de
-  `communityRoutes` sur `/api` qui a intercepté `/api/health` (piège #17).
+  déjà coûté des heures de diagnostic, toujours pas traité malgré plusieurs
+  sessions de développement depuis sa découverte. Puis déploiement +
+  vérification réelle de l'Axe F et de l'Axe G (voir "Ordre de travail
+  suggéré"). Exécuter la migration `2026-09-12_notifications.sql` sur la
+  base de production (nouvelle table `notifications`, non appliquée).
 - **Attend des autres :** rien de bloquant actuellement côté infra —
   migration disque faite, Team Folder `Communautaire` créé, système
   redéployé et globalement fonctionnel. Les points remontés (Axe F) sont
@@ -242,8 +255,18 @@
     prioritaires, logs, permissions), middleware, frontend (5 onglets),
     Utilisateurs/Matricules — tout fait, voir `CONTEXT.md` section 4 et
     `JOURNAL.md` pour le détail historique.
-- ⬜ **D3. Notifications (cloche) fonctionnelles** — au moins pour les
-  événements clés (nouveau devoir, rendu reçu, dépôt communautaire).
+- ✅ **D3. Notifications (cloche) fonctionnelles.** Table `notifications`
+  (fan-out à l'écriture, une ligne par destinataire), helper
+  `utils/notify.js` (`notifyUser`/`notifyUsers`/`notifyFiliere`/
+  `notifyAllExcept`), route `GET/PATCH /api/notifications`. Trois
+  évènements déclencheurs : nouveau devoir (tous les étudiants de la
+  filière ciblée), rendu reçu (le professeur propriétaire du devoir),
+  dépôt communautaire (tous les utilisateurs actifs sauf l'auteur).
+  Frontend : cloche avec badge non-lus + panneau déroulant (composant
+  `NotificationBell`, réutilisé sur l'Accueil et `ScreenHeader`), polling
+  30s, clic = marque lu + navigue vers l'onglet concerné. **Codé et buildé,
+  pas testé en conditions réelles** (nécessite la migration
+  `2026-09-12_notifications.sql`, non exécutée sur la prod).
 - ⬜ **D4. Page de gestion du stockage dédiée** (au-delà de la jauge simple
   du Dashboard).
 
@@ -324,6 +347,55 @@
   (Mes fichiers, Cours partagés, Paramètres) en enrichissant leur sous-titre
   existant.
 
+## Axe G — Sécurité et améliorations (audit + recherche, 2026-09-12)
+
+> Victoire a demandé une recherche libre sur ce qui pouvait être amélioré
+> ou ajouté au système existant. Recommandations présentées, puis
+> explicitement validées ("vas-y build tes récommandation") et codées dans
+> la foulée. Voir `JOURNAL.md` pour le détail session par session.
+
+- ✅ **G1. Rate limiting.** `express-rate-limit` — limite globale (300
+  req/15 min, `apiLimiter`, appliquée à toute l'API) + limite stricte sur
+  les routes d'authentification (10 req/15 min, `authLimiter`, sur
+  `/register`, `/login`, `/verify-matricule/:matricule`,
+  `/change-password`). Protège notamment contre le bruteforce direct sur
+  `/login` (CONTEXT.md piège #14).
+- ✅ **G2. En-têtes de sécurité HTTP.** `helmet()` monté globalement dans
+  `index.js` — CSP par défaut, HSTS, X-Frame-Options, etc. Sans risque ici
+  : ce serveur ne sert que du JSON, jamais de HTML.
+- ✅ **G3. Durcissement `JWT_SECRET`.** Nouveau `config/jwt.js` : échec
+  explicite au démarrage (`throw`) si `JWT_SECRET` n'est pas défini dans
+  l'environnement — plus de valeur par défaut `'holocron_secret_2024'`
+  commitée dans le code (n'importe qui avec accès au dépôt pouvait forger
+  un token valide pour n'importe quel compte). **Action manuelle requise
+  côté serveur** : `docker-compose.yml` définit toujours
+  `JWT_SECRET: holocron_secret_2024` pour ne pas casser le prochain
+  déploiement — Victoire doit la remplacer par une valeur forte et unique
+  dès que possible (voir `DECISIONS.md`). Rotation = déconnexion de tous
+  les utilisateurs actifs, à faire à un moment approprié.
+- ✅ **G4. Pagination du catalogue communautaire.** `GET
+  /community/resources` accepte `page`/`limit` (max 50/page, 20 par
+  défaut), renvoie `pagination: {page, limit, total, totalPages}`.
+  Frontend : contrôles Précédent/Suivant sous la grille, page réinitialisée
+  à 1 à chaque changement de filtre.
+- ✅ **G5. Renommer/déplacer un fichier (Explorateur).** Nouvelle route
+  `POST /files/move` (WebDAV `MOVE` natif, `Overwrite: F`), même garde-fou
+  que la suppression (B2) : un étudiant ne peut pas agir dans un Team
+  Folder `Cours-*`. Icône crayon (vue Grille) / lien "Renommer" (vue Liste),
+  fonctionne aussi sur les dossiers.
+- ✅ **G6. Recherche dans "Mes fichiers".** Filtrage local par nom dans le
+  dossier courant (pas d'appel réseau supplémentaire), réinitialisée à
+  chaque navigation vers un nouveau dossier.
+- ✅ **G7. Réinitialisation de mot de passe par un admin.** Nouvelle route
+  `POST /admin/users/:userId/reset-password` (permission
+  `gerer_utilisateurs`) pour un utilisateur bloqué qui a perdu son mot de
+  passe (le flux existant `changePassword` exige l'ancien, donc inutile
+  dans ce cas). Même ordre Nextcloud-d'abord que C1, génère un mot de
+  passe temporaire affiché **une seule fois** à l'admin (à communiquer
+  hors-bande), invalide les sessions actives de l'utilisateur.
+- ✅ **G8. Notifications (D3)** — voir Axe D ci-dessus, listé aussi ici
+  car issu de cette même session de recommandations.
+
 ## Axe E — Infrastructure et résilience
 
 - ⬜ **E1. Redondance disque.** Miroir ZFS si un second disque est
@@ -347,14 +419,17 @@
 
 1. **B0 reste à faire** — bug critique découvert le 2026-09-12 (comptes
    fantômes si Nextcloud échoue à l'inscription), **pas encore corrigé**
-   malgré tout le reste de l'Axe F traité — à prioriser au prochain passage
-   côté code, avant tout nouveau développement.
-2. **Déploiement + vérification de F1-F8** : exécuter la migration
-   `2026-09-12_taxonomie_dynamique.sql`, redéployer, puis confirmer chaque
-   point avec Victoire — en particulier F3 (dépend des providers de preview
-   Nextcloud, pas vérifiés) et F5 (bug pas reproduit dans le code actuel,
-   à reconfirmer après déploiement du build à jour).
-3. Puis B0, puis Axe D restant (D3, D4).
+   malgré tout le reste de l'Axe F et de l'Axe G traité — à prioriser au
+   prochain passage côté code, avant tout nouveau développement.
+2. **Déploiement + vérification de F1-F8 et G1-G8** : exécuter les deux
+   migrations en attente (`2026-09-12_taxonomie_dynamique.sql` et
+   `2026-09-12_notifications.sql`), remplacer la valeur de `JWT_SECRET`
+   dans `docker-compose.yml` par un secret fort (G3), redéployer, puis
+   confirmer chaque point avec Victoire — en particulier F3 (dépend des
+   providers de preview Nextcloud, pas vérifiés), F5 (bug pas reproduit
+   dans le code actuel, à reconfirmer) et D3/G8 (notifications jamais
+   testées contre le vrai serveur).
+3. Puis Axe D restant (D4).
 4. Le reste (axe E, refonte visuelle Aurora/Meridian non retenue,
    supercalculateur) au fil de l'eau, sans bloquer les précédents.
 

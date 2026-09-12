@@ -7,6 +7,79 @@
 
 ---
 
+## 2026-09-12 (suite 4) — Axe G : audit sécurité/fiabilité + recommandations codées
+
+**Contexte :** Victoire demande une recherche libre ("que peux-tu améliorer
+ou ajouter au système déjà présent ?"). Audit du code existant + recherche
+externe, recommandations présentées et classées (sécurité, fiabilité,
+fonctionnalités manquantes), puis explicitement validées ("vas-y build tes
+récommandation") — implémentation complète de la liste dans la foulée.
+Nouvel **Axe G** créé dans `ROADMAP.md` pour ces points (distincts de
+l'Axe F, qui vient du retour d'usage de Victoire).
+
+**Ce qui a été fait :**
+- **G1 Rate limiting** : `express-rate-limit` — `apiLimiter` global
+  (300/15min sur toute l'API) + `authLimiter` strict (10/15min) sur
+  `/register`, `/login`, `/verify-matricule/:matricule`,
+  `/change-password`.
+- **G2 Helmet** : `helmet()` monté globalement dans `index.js` — sans
+  risque, ce serveur ne sert que du JSON.
+- **G3 Durcissement JWT_SECRET** : nouveau `config/jwt.js`, échec explicite
+  au démarrage si `JWT_SECRET` absent de l'environnement — supprime le
+  fallback `'holocron_secret_2024'` commité en dur (n'importe qui avec le
+  dépôt pouvait forger un token valide). `docker-compose.yml` inchangé
+  volontairement (rotation = déconnexion de tous les utilisateurs, décision
+  de timing qui revient à Victoire) — **action manuelle requise** avant que
+  ce correctif soit réellement effectif en production.
+- **G4 Pagination catalogue communautaire** : `GET /community/resources`
+  accepte `page`/`limit` (max 50), renvoie `pagination`. Contrôles
+  Précédent/Suivant côté `CommunitySpace.jsx`.
+- **G5 Renommer/déplacer (Explorateur)** : nouvelle route `POST
+  /files/move` (WebDAV `MOVE`), même garde-fou Team Folders `Cours-*` que
+  B2. Icône crayon (Grille) / lien "Renommer" (Liste), fichiers et
+  dossiers.
+- **G6 Recherche "Mes fichiers"** : filtrage local par nom, pas d'appel
+  réseau, réinitialisée à la navigation.
+- **G7 Réinitialisation mot de passe par un admin** : `POST
+  /admin/users/:userId/reset-password` (permission `gerer_utilisateurs`),
+  même ordre Nextcloud-d'abord que C1, mot de passe temporaire affiché une
+  seule fois, sessions actives invalidées.
+- **G8 / D3 Notifications (cloche)** : nouvelle table `notifications`
+  (fan-out à l'écriture), `utils/notify.js`, routes `GET/PATCH
+  /api/notifications`. Trois évènements : nouveau devoir → étudiants de la
+  filière ; rendu reçu → professeur propriétaire du devoir ; dépôt
+  communautaire → tous les utilisateurs actifs sauf l'auteur. Frontend :
+  composant `NotificationBell` (badge non-lus, panneau déroulant, polling
+  30s), intégré sur l'Accueil et dans `ScreenHeader` (donc sur tous les
+  écrans). **Migration séparée à exécuter manuellement** :
+  `database/migrations/2026-09-12_notifications.sql`.
+- Build de production revérifié après chaque étape (`npx react-scripts
+  build`, compile sans erreur à chaque fois), `node --check` OK sur tout
+  le backend modifié. Serveur backend démarré localement pour un
+  smoke-test réel (pas juste une vérification de syntaxe) : confirmé que
+  `/api/health` répond 200 avec les en-têtes `helmet`/rate-limit corrects,
+  que `/api/notifications` répond 401 sans token (route bien montée et
+  protégée), et que le process **refuse de démarrer** sans `JWT_SECRET`
+  dans l'environnement (comportement fail-fast attendu de G3).
+
+**Ce qui reste en suspens :**
+- **B0 (rollback `register`) toujours pas corrigé** — reste la priorité
+  absolue, non traitée depuis plusieurs sessions malgré Axe F et G.
+- Rien de cette session n'a été testé contre le vrai Nextcloud/MySQL de
+  production — seuls le build et un smoke-test local (sans DB réelle) ont
+  été faits.
+- Migration `2026-09-12_notifications.sql` pas encore exécutée en
+  production (comme celle de F6, toujours en attente).
+- `JWT_SECRET` dans `docker-compose.yml` de production toujours la valeur
+  faible d'origine — à remplacer par Victoire par un secret fort (voir G3
+  ci-dessus et `DECISIONS.md`).
+- Le volume de notifications "dépôt communautaire" (broadcast à tous les
+  utilisateurs actifs) n'a pas été testé à l'échelle réelle du campus — à
+  surveiller si le nombre d'utilisateurs actifs devient important
+  (inserts en fan-out, un par destinataire).
+
+---
+
 ## 2026-09-12 (suite 3) — Axe F (F1-F8) codé + correctif piège #17
 
 **Contexte :** Victoire demande confirmation que les 8 points remontés

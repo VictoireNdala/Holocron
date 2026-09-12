@@ -116,6 +116,8 @@ export default function CommunitySpace({ T, isMobile, isSuperAdmin, permissions 
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState({ category:'', faculty:'', level:'', q:'' });
   const [searchInput, setSearchInput] = useState('');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
   const [detailId, setDetailId] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -138,14 +140,21 @@ export default function CommunitySpace({ T, isMobile, isSuperAdmin, permissions 
     }).catch(() => {});
   }, []);
 
+  // Revenir à la page 1 à chaque changement de filtre (sinon on peut se
+  // retrouver sur une page qui n'existe plus pour le nouveau résultat).
+  useEffect(() => { setPage(1); }, [filters]);
+
   useEffect(() => {
     if (view !== 'catalogue') return;
     setLoading(true);
-    listCommunityResources({ category: filters.category, faculty: filters.faculty, level: filters.level, q: filters.q })
-      .then(r => setResources(r.data.resources || []))
-      .catch(() => setResources([]))
+    listCommunityResources({ category: filters.category, faculty: filters.faculty, level: filters.level, q: filters.q, page, limit: 24 })
+      .then(r => {
+        setResources(r.data.resources || []);
+        setTotalPages(r.data.pagination?.totalPages || 1);
+      })
+      .catch(() => { setResources([]); setTotalPages(1); })
       .finally(() => setLoading(false));
-  }, [view, filters]);
+  }, [view, filters, page]);
 
   useEffect(() => {
     if (view !== 'detail' || !detailId) return;
@@ -462,6 +471,20 @@ export default function CommunitySpace({ T, isMobile, isSuperAdmin, permissions 
       ) : (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))', gap:'20px' }}>
           {resources.map(r => <ResourceCard key={r.id} T={T} r={r} onClick={() => openDetail(r.id)} />)}
+        </div>
+      )}
+
+      {!loading && resources.length > 0 && totalPages > 1 && (
+        <div style={{ display:'flex', justifyContent:'center', alignItems:'center', gap:'14px', marginTop:'28px' }}>
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
+            style={{ padding:'7px 14px', borderRadius:'8px', background:T.surface, border:'none', color: page <= 1 ? T.textMuted : T.text, fontSize:'12.5px', fontWeight:'600', cursor: page <= 1 ? 'default' : 'pointer', opacity: page <= 1 ? .5 : 1 }}>
+            Précédent
+          </button>
+          <span style={{ fontSize:'12.5px', color:T.textMuted }}>Page {page} / {totalPages}</span>
+          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
+            style={{ padding:'7px 14px', borderRadius:'8px', background:T.surface, border:'none', color: page >= totalPages ? T.textMuted : T.text, fontSize:'12.5px', fontWeight:'600', cursor: page >= totalPages ? 'default' : 'pointer', opacity: page >= totalPages ? .5 : 1 }}>
+            Suivant
+          </button>
         </div>
       )}
     </div>

@@ -23,6 +23,7 @@ router.get('/logs', checkPermission('voir_logs'), adminController.listLogs);
 // Utilisateurs (Panel Admin base)
 router.get('/users',                        checkPermission('gerer_utilisateurs'), adminController.listUsers);
 router.patch('/users/:userId/toggle-active', checkPermission('gerer_utilisateurs'), adminController.toggleUserActive);
+router.post('/users/:userId/reset-password', checkPermission('gerer_utilisateurs'), adminController.resetUserPassword);
 
 // Matricules — liste blanche (Panel Admin base)
 router.get('/matricules',              checkPermission('gerer_matricules'), adminController.listMatricules);

@@ -196,6 +196,23 @@ CREATE TABLE community_reports (
     FOREIGN KEY (reporter_id) REFERENCES users(id)
 );
 
+-- ── Notifications (D3) ────────────────────────────────────────────────────
+-- Fan-out à l'écriture : une ligne par destinataire (pas de table de jointure
+-- "lu par"), plus simple à requêter pour l'affichage "mes notifications" au
+-- prix d'un peu plus d'inserts — acceptable à l'échelle d'un campus.
+CREATE TABLE notifications (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    user_id    INT NOT NULL,
+    type       VARCHAR(50) NOT NULL,   -- 'nouveau_devoir' | 'rendu_recu' | 'depot_communautaire'
+    title      VARCHAR(200) NOT NULL,
+    message    TEXT,
+    link       VARCHAR(50),            -- onglet Dashboard à ouvrir au clic ('submissions', 'community'...)
+    is_read    BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_user_unread (user_id, is_read)
+);
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- SEED — matricules
 -- ═══════════════════════════════════════════════════════════════════════════

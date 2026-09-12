@@ -41,6 +41,7 @@ export const downloadFile = (path) => API.get(`/files/download?path=${encodeURIC
 export const getFilePreview = (fileId, size = 160) => API.get(`/files/preview?fileId=${fileId}&size=${size}`, { responseType: 'blob' });
 export const createFolder = (path) => API.post('/files/mkdir', { path });
 export const deleteFile   = (path) => API.delete('/files/delete', { data: { path } });
+export const moveFile     = (path, newPath) => API.post('/files/move', { path, newPath });
 
 // ── Corbeille (trashbin natif Nextcloud) ────────────────────────────────────
 export const getTrash        = () => API.get('/files/trash');
@@ -51,6 +52,11 @@ export const emptyTrash      = () => API.delete('/files/trash/empty');
 // Données réelles Dashboard
 export const getQuota         = () => API.get('/files/quota');
 export const getSharedFolders = () => API.get('/files/shared');
+
+// ── Notifications (D3) ────────────────────────────────────────────────────
+export const listNotifications         = () => API.get('/notifications');
+export const markNotificationRead      = (id) => API.patch(`/notifications/${id}/read`);
+export const markAllNotificationsRead  = () => API.patch('/notifications/read-all');
 
 // ── Submissions ──────────────────────────────────────────────────────────
 export const listAssignments  = ()     => API.get('/submissions/assignments');
@@ -111,6 +117,7 @@ export const listActivityLogs = (params = {}) => {
 
 export const listAdminUsers    = (q = '') => API.get(`/admin/users?q=${encodeURIComponent(q)}`);
 export const toggleUserActive  = (userId) => API.patch(`/admin/users/${userId}/toggle-active`);
+export const resetUserPassword = (userId) => API.post(`/admin/users/${userId}/reset-password`);
 
 export const listMatricules  = (q = '') => API.get(`/admin/matricules?q=${encodeURIComponent(q)}`);
 export const addMatricule    = (data)   => API.post('/admin/matricules', data);

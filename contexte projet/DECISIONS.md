@@ -9,6 +9,65 @@
 
 ---
 
+### D-2026-09-12-06 — Notifications : fan-out à l'écriture plutôt qu'une table de lecture séparée
+
+**Contexte :** implémentation de D3/G8 (notifications cloche pour nouveau
+devoir, rendu reçu, dépôt communautaire) — certains évènements (dépôt
+communautaire) doivent notifier un grand nombre de destinataires en une
+fois.
+
+**Décision :** une ligne par destinataire dans `notifications`
+(`user_id`, `type`, `title`, `message`, `link`, `is_read`), insérée au
+moment de l'évènement (`utils/notify.js` : `notifyUser`/`notifyUsers`/
+`notifyFiliere`/`notifyAllExcept`). Lecture d'un utilisateur = simple
+`SELECT ... WHERE user_id = ?`, aucune jointure. Notifications non
+bloquantes sur erreur (même philosophie que `utils/activityLog.js`) : un
+échec d'insertion de notification ne doit jamais faire échouer l'action
+métier qui l'a déclenchée (créer un devoir, soumettre un rendu, déposer
+une ressource).
+
+**Alternative écartée :** une table `notifications` globale (un
+évènement = une ligne) + une table de jointure `notification_reads`
+(user_id, notification_id) pour suivre qui a lu quoi. Plus économe en
+lignes pour un broadcast, mais plus complexe à lire (jointure obligatoire
+pour "mes notifications non lues") et sans bénéfice réel à l'échelle d'un
+campus (quelques centaines d'utilisateurs, pas de volumétrie qui
+justifierait d'optimiser l'espace disque au prix de la simplicité de
+lecture).
+
+**Conséquence à surveiller :** un dépôt communautaire génère une ligne
+par utilisateur actif (`notifyAllExcept`) — jamais mesuré à l'échelle
+réelle du campus. Si le nombre d'utilisateurs actifs devient important,
+réévaluer (au minimum une purge périodique des notifications anciennes/lues).
+
+---
+
+### D-2026-09-12-05 — JWT_SECRET : durcissement du code, rotation de la valeur différée
+
+**Contexte :** audit sécurité (Axe G) — `JWT_SECRET` avait un fallback en
+dur dans le code (`process.env.JWT_SECRET || 'holocron_secret_2024'`),
+committé et donc connu de quiconque a accès au dépôt Git. N'importe qui
+pouvait forger un token JWT valide pour n'importe quel compte (y compris
+super admin), sans avoir besoin d'accéder au serveur.
+
+**Décision :** le code (`backend/src/config/jwt.js`) refuse désormais de
+démarrer si `JWT_SECRET` n'est pas défini dans l'environnement — plus de
+valeur par défaut silencieuse. En revanche, **la valeur actuelle dans
+`docker-compose.yml` n'a volontairement pas été changée** dans cette
+session : la remplacer invalide immédiatement tous les jetons JWT actifs
+(déconnexion forcée de tous les utilisateurs connectés), ce qui est une
+décision de timing opérationnel qui revient à Victoire, pas à un choix
+technique que le code peut trancher seul.
+
+**Conséquence :** avant que ce correctif soit réellement effectif, une
+action manuelle reste nécessaire — remplacer `JWT_SECRET` dans
+`docker-compose.yml` par une valeur forte et unique (voir `CONTEXT.md`
+section 5), idéalement à un moment de faible usage. Tant que ce n'est pas
+fait, le risque (valeur connue et committée) reste présent malgré le
+correctif de code — seul le fallback silencieux disparaît.
+
+---
+
 ### D-2026-09-12-04 — Taxonomie dynamique : VARCHAR + table de référence plutôt qu'une FK stricte
 
 **Contexte :** implémentation de F6 (D-2026-09-12-03) — rendre les

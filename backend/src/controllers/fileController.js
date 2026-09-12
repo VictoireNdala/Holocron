@@ -239,6 +239,38 @@ exports.deleteFile = async (req, res) => {
   }
 };
 
+// ── Renommer / déplacer un fichier ou dossier ─────────────────────────────
+// WebDAV MOVE natif — un renommage est juste un déplacement vers un chemin
+// qui ne diffère que par le nom final. Même garde-fou que deleteFile (B2) :
+// un étudiant ne peut pas déplacer/renommer un Team Folder de cours.
+exports.moveFile = async (req, res) => {
+  try {
+    const { path, newPath } = req.body;
+    if (!path || !newPath) {
+      return res.status(400).json({ success: false, message: 'path et newPath requis' });
+    }
+
+    if (req.user.role === 'etudiant' && (/^\/?cours[-_]/i.test(path) || /^\/?cours[-_]/i.test(newPath))) {
+      return res.status(403).json({ success: false, message: 'Action impossible dans un dossier de cours' });
+    }
+
+    const username    = req.user.nextcloud_username;
+    const destination = `${NC_URL}/remote.php/dav/files/${username}${newPath}`;
+
+    await userWebdav(req)({
+      method:  'MOVE',
+      url:     `/remote.php/dav/files/${username}${path}`,
+      headers: { Destination: destination, Overwrite: 'F' }
+    });
+    res.json({ success: true, message: 'Déplacé/renommé' });
+  } catch (error) {
+    const s = error.response?.status;
+    if (s === 412) return res.status(409).json({ success: false, message: 'Un élément porte déjà ce nom à cet emplacement' });
+    console.error('moveFile:', s, error.message);
+    res.status(500).json({ success: false, message: 'Erreur déplacement/renommage' });
+  }
+};
+
 // ── Quota réel (OCS API, client admin) ────────────────────────────────────
 // GET /ocs/v1.php/cloud/users/{username}?format=json → quota {used,total,relative,quota}
 exports.getQuota = async (req, res) => {

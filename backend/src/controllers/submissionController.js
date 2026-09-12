@@ -2,6 +2,7 @@ const db     = require('../config/db');
 const axios  = require('axios');
 const fs     = require('fs');
 const path   = require('path');
+const { notifyFiliere, notifyUser } = require('../utils/notify');
 
 const NC_URL = process.env.NEXTCLOUD_URL || 'http://192.168.1.4:8080';
 // Racine des données Nextcloud montée en lecture seule dans le backend
@@ -28,6 +29,14 @@ exports.createAssignment = async (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?)`,
       [titre, description || null, filiere, date_limite || null, req.user.id, profNom]
     );
+
+    await notifyFiliere(filiere, {
+      type: 'nouveau_devoir',
+      title: 'Nouveau devoir',
+      message: `${profNom || 'Un enseignant'} a publié « ${titre} »`,
+      link: 'submissions'
+    });
+
     res.status(201).json({ success: true, message: 'Devoir créé', id: r.insertId });
   } catch (error) {
     console.error('createAssignment:', error.message);
@@ -92,6 +101,16 @@ exports.submit = async (req, res) => {
                                submitted_at = CURRENT_TIMESTAMP`,
       [assignmentId, req.user.id, etudiantNom, fichierPath, fichierNom]
     );
+
+    const [[assignment]] = await db.execute('SELECT titre, prof_id FROM assignments WHERE id = ?', [assignmentId]);
+    if (assignment?.prof_id) {
+      await notifyUser(assignment.prof_id, {
+        type: 'rendu_recu',
+        title: 'Rendu reçu',
+        message: `${etudiantNom || 'Un étudiant'} a déposé un rendu pour « ${assignment.titre} »`,
+        link: 'submissions'
+      });
+    }
 
     res.json({ success: true, message: 'Devoir soumis' });
   } catch (error) {

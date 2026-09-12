@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt    = require('jsonwebtoken');
 const db     = require('../config/db');
 const { createNextcloudUser, addUserToGroup, setUserQuota, setUserPassword } = require('../config/nextcloud');
+const JWT_SECRET = require('../config/jwt');
 
 // Quotas par rôle (état 12 juillet : étudiant 2 GB, prof 10 GB, assistant 5 GB)
 const QUOTA = { etudiant: '2 GB', professeur: '10 GB', assistant: '5 GB' };
@@ -136,7 +137,7 @@ exports.login = async (req, res) => {
         id: user.id, role: user.role,
         matricule: user.matricule, nextcloud_username: user.nextcloud_username
       },
-      process.env.JWT_SECRET || 'holocron_secret_2024',
+      JWT_SECRET,
       { expiresIn: '24h' }
     );
 

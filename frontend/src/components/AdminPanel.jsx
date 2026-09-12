@@ -5,7 +5,7 @@ import {
   listAdmins, searchUsers, grantAdmin, revokeAdmin,
   listPriorityFolders, createPriorityFolder, deletePriorityFolder,
   listActivityLogs, listFaculties, listLevels, listFacultyFilieres,
-  listAdminUsers, toggleUserActive, listMatricules, addMatricule, deleteMatricule,
+  listAdminUsers, toggleUserActive, resetUserPassword, listMatricules, addMatricule, deleteMatricule,
   listCategories, createFaculty, deleteFaculty, createFiliereEntry, deleteFiliereEntry,
   createLevelEntry, deleteLevelEntry, createCategoryEntry, deleteCategoryEntry,
 } from '../services/api';
@@ -112,6 +112,16 @@ function UsersTab({ T, isMobile, card, inputStyle }) {
     catch (err) { alert(err.response?.data?.message || 'Échec de la mise à jour.'); }
   };
 
+  const handleResetPassword = async (u) => {
+    if (!window.confirm(`Réinitialiser le mot de passe de ${u.prenom} ${u.nom} (${u.matricule}) ? L'utilisateur sera déconnecté de ses sessions en cours.`)) return;
+    try {
+      const r = await resetUserPassword(u.id);
+      window.prompt('Mot de passe temporaire généré — communiquez-le à l\'utilisateur (visible une seule fois) :', r.data.tempPassword);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Échec de la réinitialisation.');
+    }
+  };
+
   const filtered = users.filter(u => {
     if (roleFilter === 'desactives') return !u.is_active;
     if (roleFilter) return u.role === roleFilter;
@@ -145,6 +155,7 @@ function UsersTab({ T, isMobile, card, inputStyle }) {
               </div>
               <span style={{ fontSize:'12.5px', color:T.textMuted, flex:'1' }}>{ROLES.find(r => r.value===u.role)?.label || u.role}</span>
               <span style={{ fontSize:'11px', fontWeight:'600', padding:'3px 9px', borderRadius:'12px', background: u.is_active ? T.surfaceAlt : T.dangerDim, color: u.is_active ? T.textMuted : T.danger, whiteSpace:'nowrap' }}>{u.is_active ? 'Actif' : 'Désactivé'}</span>
+              <span onClick={() => handleResetPassword(u)} style={{ fontSize:'12px', color:T.textMuted, fontWeight:'600', cursor:'pointer', whiteSpace:'nowrap' }}>Réinitialiser mdp</span>
               <span onClick={() => handleToggle(u.id)} style={{ fontSize:'12px', color: u.is_active ? T.danger : T.accent, fontWeight:'600', cursor:'pointer', whiteSpace:'nowrap' }}>{u.is_active ? 'Désactiver' : 'Réactiver'}</span>
             </div>
           ))}

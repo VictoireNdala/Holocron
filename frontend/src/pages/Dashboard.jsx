@@ -11,17 +11,18 @@ import {
   faEye, faEyeSlash, faFile, faFileZipper,
   faChevronDown, faChevronRight, faBookOpen, faArrowLeft, faCheckSquare, faSquare,
   faCircleCheck, faFloppyDisk, faSpinner, faXmark,
-  faTrashCan, faRotateLeft, faMoon, faSun
+  faTrashCan, faRotateLeft, faMoon, faSun, faPen, faMagnifyingGlass, faBell
 } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../context/AuthContext';
 import {
   getProfile, logout, changePassword,
-  listFiles, uploadFile, downloadFile, createFolder, deleteFile,
+  listFiles, uploadFile, downloadFile, createFolder, deleteFile, moveFile,
   getQuota, getSharedFolders,
   listAssignments, createAssignment, submitAssignment,
   getMySubmissions, getReceivedSubmissions, downloadSubmission,
   getTrash, restoreTrash, purgeTrashItem, emptyTrash,
-  listCommunityResources, getFilePreview
+  listCommunityResources, getFilePreview,
+  listNotifications, markNotificationRead, markAllNotificationsRead
 } from '../services/api';
 import { getTokens } from '../theme/tokens';
 import CommunitySpace from '../components/CommunitySpace';
@@ -141,12 +142,16 @@ function AssignmentRow({ T, title, subtitle, badge }) {
   );
 }
 
-function ExplorerCard({ T, file, onNavigate, onDownload, onDelete, canDelete, selectMode, selected, onToggleSelect }) {
+function ExplorerCard({ T, file, onNavigate, onDownload, onDelete, onRename, canDelete, selectMode, selected, onToggleSelect }) {
   return (
     <div style={{ ...card(T, { padding:'16px', cursor:'pointer', display:'flex', flexDirection:'column', gap:'10px', position:'relative' }) }}>
       {selectMode && (
         <FontAwesomeIcon icon={selected ? faCheckSquare : faSquare} onClick={() => onToggleSelect(file.path)}
           style={{ position:'absolute', top:'10px', right:'10px', fontSize:'16px', color: selected ? T.accent : T.textMuted, cursor:'pointer' }} />
+      )}
+      {!selectMode && canDelete && (
+        <FontAwesomeIcon icon={faPen} onClick={() => onRename(file)}
+          style={{ position:'absolute', top:'12px', right:'12px', fontSize:'12px', color:T.textMuted, cursor:'pointer' }} />
       )}
       {file.isDirectory ? (
         <FontAwesomeIcon icon={faFolder} onClick={() => onNavigate(file.path)} style={{ fontSize:'32px', color:T.textMuted }} />
@@ -177,7 +182,7 @@ function ExplorerCard({ T, file, onNavigate, onDownload, onDelete, canDelete, se
 
 // Vue Liste — reproduit la structure du canvas (icône/nom/taille/date en
 // ligne), vue par défaut de l'Explorateur.
-function ExplorerRow({ T, file, onNavigate, onDownload, onDelete, canDelete, isLast, selectMode, selected, onToggleSelect }) {
+function ExplorerRow({ T, file, onNavigate, onDownload, onDelete, onRename, canDelete, isLast, selectMode, selected, onToggleSelect }) {
   return (
     <div style={{ display:'flex', alignItems:'center', gap:'16px', padding:'12px 16px', borderBottom: isLast ? 'none' : `1px solid ${T.border}` }}>
       {selectMode && (
@@ -190,12 +195,11 @@ function ExplorerRow({ T, file, onNavigate, onDownload, onDelete, canDelete, isL
       <div onClick={() => file.isDirectory && onNavigate(file.path)} style={{ flex:1, minWidth:0, fontSize:'13.5px', fontWeight:'600', color:T.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', cursor: file.isDirectory ? 'pointer' : 'default' }}>{file.name}</div>
       <div style={{ width:'80px', fontSize:'12.5px', color:T.textMuted, flexShrink:0 }}>{file.isDirectory ? 'Dossier' : formatSize(file.size)}</div>
       <div style={{ width:'80px', fontSize:'12.5px', color:T.textMuted, flexShrink:0 }}>{fmtDate(file.modified)}</div>
-      {!file.isDirectory && (
-        <div style={{ display:'flex', gap:'10px', flexShrink:0 }}>
-          <span onClick={() => onDownload(file.path)} style={{ fontSize:'12px', color:T.accent, fontWeight:'600', cursor:'pointer' }}>Télécharger</span>
-          {canDelete && <span onClick={() => onDelete(file.path)} style={{ fontSize:'12px', color:T.danger, fontWeight:'600', cursor:'pointer' }}>Supprimer</span>}
-        </div>
-      )}
+      <div style={{ display:'flex', gap:'10px', flexShrink:0 }}>
+        {!file.isDirectory && <span onClick={() => onDownload(file.path)} style={{ fontSize:'12px', color:T.accent, fontWeight:'600', cursor:'pointer' }}>Télécharger</span>}
+        {canDelete && <span onClick={() => onRename(file)} style={{ fontSize:'12px', color:T.textMuted, fontWeight:'600', cursor:'pointer' }}>Renommer</span>}
+        {canDelete && !file.isDirectory && <span onClick={() => onDelete(file.path)} style={{ fontSize:'12px', color:T.danger, fontWeight:'600', cursor:'pointer' }}>Supprimer</span>}
+      </div>
     </div>
   );
 }
@@ -256,6 +260,11 @@ export default function Dashboard() {
   const [showPw, setShowPw]     = useState({});
   const [pwStatus, setPwStatus] = useState({ loading:false, error:'', success:'' });
 
+  // ── State Notifications (D3) ────────────────────────────────────────────────
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifs, setShowNotifs] = useState(false);
+
   // ── State Explorer ─────────────────────────────────────────────────────────
   const [files, setFiles]             = useState([]);
   const [filesLoading, setFilesLoading] = useState(false);
@@ -265,6 +274,7 @@ export default function Dashboard() {
   const [newFolder, setNewFolder]     = useState('');
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [explorerView, setExplorerView] = useState('list'); // 'list' | 'grid'
+  const [explorerSearch, setExplorerSearch] = useState(''); // recherche locale par nom (dossier courant)
   const [selectMode, setSelectMode] = useState(false); // F4 : sélection multiple
   const [selectedPaths, setSelectedPaths] = useState(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -337,6 +347,35 @@ export default function Dashboard() {
     listCommunityResources({ sort: 'recent' }).then(r => setCommunityPreview((r.data.resources || []).slice(0, 3))).catch(() => {});
   }, []);
 
+  // Notifications (D3) — chargement initial puis rafraîchissement périodique
+  // (pas de WebSocket dans ce projet, un simple polling suffit à l'échelle
+  // d'un campus).
+  const loadNotifications = () => {
+    listNotifications()
+      .then(r => { setNotifications(r.data.notifications || []); setUnreadCount(r.data.unread || 0); })
+      .catch(() => {});
+  };
+  useEffect(() => {
+    loadNotifications();
+    const interval = setInterval(loadNotifications, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleOpenNotification = async (n) => {
+    setShowNotifs(false);
+    if (!n.is_read) {
+      try { await markNotificationRead(n.id); } catch (_) {}
+      setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, is_read: true } : x));
+      setUnreadCount(c => Math.max(0, c - 1));
+    }
+    if (n.link) setTab(n.link);
+  };
+  const handleMarkAllRead = async () => {
+    try { await markAllNotificationsRead(); } catch (_) {}
+    setNotifications(prev => prev.map(x => ({ ...x, is_read: true })));
+    setUnreadCount(0);
+  };
+
   // ── Handlers Explorer ───────────────────────────────────────────────────────
   const loadFiles = async (path) => {
     setFilesLoading(true);
@@ -344,7 +383,7 @@ export default function Dashboard() {
     catch { setFiles([]); }
     finally { setFilesLoading(false); }
   };
-  const handleNavigate = (path) => { setCurrentPath(path); setTab('explorer'); };
+  const handleNavigate = (path) => { setCurrentPath(path); setTab('explorer'); setExplorerSearch(''); };
   const handleUpload = async (e) => {
     const file = e.target.files[0]; if (!file) return;
     const controller = new AbortController();
@@ -379,6 +418,14 @@ export default function Dashboard() {
     if (!window.confirm('Supprimer ce fichier ? Il restera disponible dans la Corbeille.')) return;
     try { await deleteFile(path); await loadFiles(currentPath); }
     catch (err) { console.error('Delete:', err); }
+  };
+  const handleRename = async (file) => {
+    const newName = window.prompt('Nouveau nom :', file.name);
+    if (!newName || !newName.trim() || newName.trim() === file.name) return;
+    const parentPath = file.path.substring(0, file.path.lastIndexOf('/')) || '/';
+    const newPath = `${parentPath === '/' ? '' : parentPath}/${newName.trim()}`;
+    try { await moveFile(file.path, newPath); await loadFiles(currentPath); }
+    catch (err) { alert(err.response?.data?.message || 'Erreur lors du renommage'); }
   };
   // F4 — sélection multiple : architecture pensée pour accueillir d'autres
   // actions groupées plus tard (partage, déplacement...), mais seule la
@@ -506,6 +553,9 @@ export default function Dashboard() {
   const submittedIds = new Set(mySubs.map(s => s.assignment_id));
   const qpct = quota && quota.total ? Math.min(100, Math.round(quota.relative || 0)) : 0;
   const quotaLabel = quota ? `${fmtGB(quota.used)} / ${fmtGB(quota.total)}` : '—';
+  const visibleFiles = explorerSearch.trim()
+    ? files.filter(f => f.name.toLowerCase().includes(explorerSearch.trim().toLowerCase()))
+    : files;
 
   const NAV_ITEMS = [
     { id:'dashboard',   label:'Accueil',              icon:faHouse },
@@ -542,6 +592,46 @@ export default function Dashboard() {
     );
   };
 
+  // Cloche + panneau déroulant (D3) — réutilisée par ScreenHeader et l'Accueil
+  // (seul écran avec un en-tête custom plutôt que ScreenHeader).
+  const NotificationBell = () => (
+    <div style={{ position:'relative' }}>
+      <div onClick={() => setShowNotifs(s => !s)} style={{ width: isMobile?'32px':'38px', height: isMobile?'32px':'38px', borderRadius:'50%', background:T.surfaceAlt, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', position:'relative' }}>
+        <FontAwesomeIcon icon={faBell} style={{ fontSize: isMobile?'13px':'14px', color:T.text }} />
+        {unreadCount > 0 && (
+          <span style={{ position:'absolute', top:'-2px', right:'-2px', minWidth:'16px', height:'16px', borderRadius:'8px', background:T.danger, color:'#fff', fontSize:'9.5px', fontWeight:'700', display:'flex', alignItems:'center', justifyContent:'center', padding:'0 3px', boxSizing:'border-box' }}>
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+      </div>
+      {showNotifs && (
+        <>
+          <div onClick={() => setShowNotifs(false)} style={{ position:'fixed', inset:0, zIndex:40 }} />
+          <div style={{ position:'absolute', top:'46px', right:0, width:'320px', maxHeight:'400px', overflowY:'auto', background:T.surface, borderRadius:'10px', boxShadow:'0 8px 24px rgba(0,0,0,0.25)', zIndex:41 }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'14px 16px', borderBottom:`1px solid ${T.border}` }}>
+              <span style={{ fontSize:'13.5px', fontWeight:'700', color:T.text }}>Notifications</span>
+              {unreadCount > 0 && <span onClick={handleMarkAllRead} style={{ fontSize:'11.5px', color:T.accent, fontWeight:'600', cursor:'pointer' }}>Tout marquer lu</span>}
+            </div>
+            {notifications.length === 0 ? (
+              <p style={{ color:T.textMuted, fontSize:'12.5px', padding:'24px 16px', textAlign:'center', margin:0 }}>Aucune notification</p>
+            ) : notifications.map(n => (
+              <div key={n.id} onClick={() => handleOpenNotification(n)} style={{ padding:'12px 16px', borderBottom:`1px solid ${T.border}`, cursor:'pointer', background: n.is_read ? 'transparent' : T.accentDim }}>
+                <div style={{ display:'flex', alignItems:'flex-start', gap:'8px' }}>
+                  {!n.is_read && <div style={{ width:'6px', height:'6px', borderRadius:'50%', background:T.accent, marginTop:'5px', flexShrink:0 }} />}
+                  <div style={{ minWidth:0 }}>
+                    <p style={{ fontSize:'12.5px', fontWeight:'600', color:T.text, margin:0 }}>{n.title}</p>
+                    {n.message && <p style={{ fontSize:'11.5px', color:T.textMuted, margin:'3px 0 0', lineHeight:'1.4' }}>{n.message}</p>}
+                    <p style={{ fontSize:'10.5px', color:T.textMuted, margin:'4px 0 0' }}>{fmtDate(n.created_at)}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+
   // Titre + avatar communs à chaque écran (remplace l'ancienne top bar unique)
   const ScreenHeader = ({ title, subtitle }) => (
     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'28px', gap:'16px' }}>
@@ -549,7 +639,10 @@ export default function Dashboard() {
         <h2 style={{ color:T.text, fontSize: isMobile?'19px':'26px', fontWeight:'700', margin:0, letterSpacing:'-0.01em' }}>{title}</h2>
         {subtitle && <p style={{ color:T.textMuted, fontSize: isMobile?'12px':'13px', margin:'6px 0 0' }}>{subtitle}</p>}
       </div>
-      <div style={{ width: isMobile?'32px':'40px', height: isMobile?'32px':'40px', borderRadius:'50%', flexShrink:0, background:T.surfaceAlt, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:'600', color:T.text, fontSize: isMobile?'12px':'14px' }}>{initials}</div>
+      <div style={{ display:'flex', alignItems:'center', gap:'12px', flexShrink:0 }}>
+        <NotificationBell />
+        <div style={{ width: isMobile?'32px':'40px', height: isMobile?'32px':'40px', borderRadius:'50%', flexShrink:0, background:T.surfaceAlt, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:'600', color:T.text, fontSize: isMobile?'12px':'14px' }}>{initials}</div>
+      </div>
     </div>
   );
 
@@ -602,7 +695,10 @@ export default function Dashboard() {
                   </div>
                 )}
               </div>
-              <div style={{ width: isMobile?'32px':'40px', height: isMobile?'32px':'40px', borderRadius:'50%', background:T.surfaceAlt, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:'600', color:T.text, fontSize: isMobile?'12px':'14px', flexShrink:0 }}>{initials}</div>
+              <div style={{ display:'flex', alignItems:'center', gap:'12px', flexShrink:0 }}>
+                <NotificationBell />
+                <div style={{ width: isMobile?'32px':'40px', height: isMobile?'32px':'40px', borderRadius:'50%', background:T.surfaceAlt, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:'600', color:T.text, fontSize: isMobile?'12px':'14px', flexShrink:0 }}>{initials}</div>
+              </div>
             </div>
 
             {isMobile ? (
@@ -720,6 +816,11 @@ export default function Dashboard() {
             <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:'16px', flexWrap:'wrap', gap:'12px' }}>
               <Breadcrumb />
               <div style={{ display:'flex', gap:'10px', flexWrap:'wrap' }}>
+                <div style={{ position:'relative' }}>
+                  <FontAwesomeIcon icon={faMagnifyingGlass} style={{ position:'absolute', left:'13px', top:'50%', transform:'translateY(-50%)', color:T.textMuted, fontSize:'12px' }} />
+                  <input value={explorerSearch} onChange={e => setExplorerSearch(e.target.value)} placeholder="Rechercher dans ce dossier…"
+                    style={{ width:'220px', boxSizing:'border-box', padding:'9px 12px 9px 34px', borderRadius:'8px', background:T.surface, border:'none', color:T.text, fontSize:'12.5px', fontFamily:'Inter,sans-serif', outline:'none' }} />
+                </div>
                 <button onClick={() => setShowNewFolder(!showNewFolder)} style={{ display:'flex', alignItems:'center', gap:'7px', padding:'10px 16px', background:T.surface, border:'none', borderRadius:'8px', color:T.text, fontSize:'13px', cursor:'pointer', fontFamily:'Inter,sans-serif' }}>
                   <FontAwesomeIcon icon={faFolderPlus} style={{ fontSize:'13px' }} /> Nouveau dossier
                 </button>
@@ -781,6 +882,8 @@ export default function Dashboard() {
                 action={<button onClick={() => fileInputRef.current?.click()} style={{ marginTop:'20px', padding:'12px 28px', background:T.accent, color:T.accentText, border:'none', borderRadius:'8px', fontSize:'14px', fontWeight:'700', cursor:'pointer', display:'inline-flex', alignItems:'center', gap:'10px', fontFamily:'Inter,sans-serif' }}>
                   <FontAwesomeIcon icon={faUpload} style={{ fontSize:'13px' }} /> Uploader un fichier <FontAwesomeIcon icon={faArrowRight} style={{ fontSize:'12px' }} />
                 </button>} />
+            ) : visibleFiles.length === 0 ? (
+              <EmptyState T={T} icon={faMagnifyingGlass} title="Aucun résultat" text={`Aucun élément ne correspond à « ${explorerSearch} » dans ce dossier.`} />
             ) : explorerView === 'list' ? (
               <div style={{ ...card(T, { padding:0 }) }}>
                 {currentPath !== '/' && (
@@ -791,8 +894,8 @@ export default function Dashboard() {
                     <span style={{ color:T.textMuted, fontSize:'13.5px' }}>.. Dossier parent</span>
                   </div>
                 )}
-                {files.map((file, i) => (
-                  <ExplorerRow key={i} T={T} file={file} onNavigate={handleNavigate} onDownload={handleDownload} onDelete={handleDelete} canDelete={isProf || !/^\/?cours[-_]/i.test(currentPath)} isLast={i === files.length - 1} selectMode={selectMode} selected={selectedPaths.has(file.path)} onToggleSelect={toggleSelect} />
+                {visibleFiles.map((file, i) => (
+                  <ExplorerRow key={i} T={T} file={file} onNavigate={handleNavigate} onDownload={handleDownload} onDelete={handleDelete} onRename={handleRename} canDelete={isProf || !/^\/?cours[-_]/i.test(currentPath)} isLast={i === visibleFiles.length - 1} selectMode={selectMode} selected={selectedPaths.has(file.path)} onToggleSelect={toggleSelect} />
                 ))}
               </div>
             ) : (
@@ -803,8 +906,8 @@ export default function Dashboard() {
                     <span style={{ color:T.textMuted, fontSize:'13px' }}>.. Dossier parent</span>
                   </div>
                 )}
-                {files.map((file, i) => (
-                  <ExplorerCard key={i} T={T} file={file} onNavigate={handleNavigate} onDownload={handleDownload} onDelete={handleDelete} canDelete={isProf || !/^\/?cours[-_]/i.test(currentPath)} selectMode={selectMode} selected={selectedPaths.has(file.path)} onToggleSelect={toggleSelect} />
+                {visibleFiles.map((file, i) => (
+                  <ExplorerCard key={i} T={T} file={file} onNavigate={handleNavigate} onDownload={handleDownload} onDelete={handleDelete} onRename={handleRename} canDelete={isProf || !/^\/?cours[-_]/i.test(currentPath)} selectMode={selectMode} selected={selectedPaths.has(file.path)} onToggleSelect={toggleSelect} />
                 ))}
               </div>
             )}

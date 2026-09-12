@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const db  = require('../config/db');
+const JWT_SECRET = require('../config/jwt');
 
 const authMiddleware = async (req, res, next) => {
   try {
@@ -10,7 +11,7 @@ const authMiddleware = async (req, res, next) => {
     }
 
     // 2. Vérifier le token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'holocron_secret_2024');
+    const decoded = jwt.verify(token, JWT_SECRET);
 
     // 3. Vérifier que la session existe en BDD
     const [sessions] = await db.execute(
