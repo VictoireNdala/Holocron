@@ -9,6 +9,39 @@
 
 ---
 
+### D-2026-09-12-04 — Taxonomie dynamique : VARCHAR + table de référence plutôt qu'une FK stricte
+
+**Contexte :** implémentation de F6 (D-2026-09-12-03) — rendre les
+catégories de l'Espace communautaire gérables sans toucher au code, sur
+une base qui contient déjà des ressources réelles déposées le 2026-09-12.
+
+**Décision :** `community_resources.categorie` passe d'un ENUM en dur à un
+simple `VARCHAR(100)` (élargissement pur, aucune donnée existante perdue),
+et une nouvelle table `community_categories` (nom, `is_logiciel`, ordre)
+sert de référentiel pour peupler les choix du formulaire de dépôt et les
+filtres du catalogue — **sans contrainte FK stricte** entre les deux.
+`is_logiciel` (booléen) remplace la comparaison `categorie === 'Logiciel'`
+partout dans le code (badges de vérification, actions de modération) : la
+catégorie spéciale est identifiée par ce flag, pas par son libellé, donc
+renommable depuis le Panel Admin sans casser la logique.
+
+**Alternative écartée :** FK stricte `community_resources.categorie_id →
+community_categories.id`. Écartée pour deux raisons : (1) plus risqué à
+migrer sur une base de production déjà peuplée (conversion de données,
+contrainte pouvant échouer sur une valeur orpheline) ; (2) supprimer une
+catégorie devenue obsolète casserait alors les ressources déjà déposées
+sous ce nom, alors qu'on veut au contraire qu'elles restent affichées
+telles quelles, juste sorties des choix proposés pour les nouveaux dépôts.
+
+**Conséquence :** facultés/filières/niveaux (déjà des tables séparées
+depuis D-2026-09-04-01) n'ont nécessité qu'un ajout de routes CRUD, aucun
+changement de schéma. Nouvelle permission `gerer_taxonomie` (ENUM
+`admin_permissions.permission` élargi). Migration séparée
+`database/migrations/2026-09-12_taxonomie_dynamique.sql`, à exécuter
+manuellement sur la base de production.
+
+---
+
 ### D-2026-09-12-02 — Navigation de l'Explorateur : fil d'Ariane + bouton Retour (hybride)
 
 **Contexte :** Victoire trouve la navigation actuelle (fil d'Ariane seul)

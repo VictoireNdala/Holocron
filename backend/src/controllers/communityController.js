@@ -19,7 +19,12 @@ const userWebdav = (req) => axios.create({
 // section 4). Le Team Folder lui-même est créé manuellement côté serveur
 // (D1.8, infra) — on crée ici les sous-dossiers au besoin (MKCOL, 405 ignoré
 // si déjà présents) pour ne pas dépendre d'une création manuelle complète.
-const CATEGORY_FOLDER = { Cours: 'Cours', Logiciel: 'Logiciels', Media: 'Medias', Autre: 'Autre' };
+// Noms historiques conservés pour les 4 catégories de départ (chemins déjà
+// utilisés par des ressources réelles déposées avant l'Axe F6) ; toute
+// catégorie créée depuis le Panel Admin après coup utilise son nom
+// sanitisé directement (voir sanitizeFolderName).
+const LEGACY_CATEGORY_FOLDER = { Cours: 'Cours', Logiciel: 'Logiciels', Media: 'Medias', Autre: 'Autre' };
+const sanitizeFolderName = (nom) => LEGACY_CATEGORY_FOLDER[nom] || nom.replace(/[^a-zA-Z0-9_-]/g, '_') || 'Autre';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -50,6 +55,44 @@ exports.listLevels = async (req, res) => {
   } catch (error) {
     console.error('listLevels:', error.message);
     res.status(500).json({ success: false, message: 'Erreur liste niveaux' });
+  }
+};
+
+// F6 — catégories gérables (table community_categories, plus un ENUM en dur)
+exports.listCategories = async (req, res) => {
+  try {
+    const [rows] = await db.execute('SELECT id, nom, is_logiciel, ordre FROM community_categories ORDER BY ordre, nom');
+    res.json({ success: true, categories: rows.map(r => ({ ...r, is_logiciel: !!r.is_logiciel })) });
+  } catch (error) {
+    console.error('listCategories:', error.message);
+    res.status(500).json({ success: false, message: 'Erreur liste catégories' });
+  }
+};
+
+// ── Dossiers prioritaires (lecture publique, tous rôles) ────────────────────
+// F7 : le catalogue doit mettre en avant les dossiers prioritaires même
+// vides — endpoint séparé de `GET /admin/priority-folders` (réservé aux
+// admins) car ici n'importe quel utilisateur authentifié doit pouvoir les
+// voir pour savoir où déposer.
+exports.listPublicPriorityFolders = async (req, res) => {
+  try {
+    const [rows] = await db.execute(
+      `SELECT pf.id, pf.faculty_id, f.nom AS faculty_nom, pf.filiere_id, ff.nom AS filiere_nom,
+              pf.level_id, l.nom AS level_nom,
+              (SELECT COUNT(*) FROM community_resources cr
+                WHERE cr.faculty_id = pf.faculty_id
+                  AND (pf.level_id IS NULL OR cr.level_id = pf.level_id)
+                  AND cr.status = 'visible') AS resource_count
+       FROM community_priority_folders pf
+       JOIN faculties f            ON f.id = pf.faculty_id
+       LEFT JOIN faculty_filieres ff ON ff.id = pf.filiere_id
+       LEFT JOIN levels l           ON l.id = pf.level_id
+       ORDER BY pf.created_at DESC`
+    );
+    res.json({ success: true, folders: rows });
+  } catch (error) {
+    console.error('listPublicPriorityFolders:', error.message);
+    res.status(500).json({ success: false, message: 'Erreur liste dossiers prioritaires' });
   }
 };
 
@@ -126,12 +169,15 @@ exports.createResource = async (req, res) => {
     const cover   = req.files?.cover_image?.[0];
 
     if (!titre || !categorie) return res.status(400).json({ success: false, message: 'Titre et catégorie requis' });
-    if (!CATEGORY_FOLDER[categorie]) return res.status(400).json({ success: false, message: 'Catégorie invalide' });
     if (!fichier) return res.status(400).json({ success: false, message: 'Fichier requis' });
 
-    // Badge de vérification uniquement pour la catégorie Logiciel (voir
-    // DECISIONS.md D-2026-09-04-02) — les autres catégories restent "non_concerne".
-    const verificationStatus = categorie === 'Logiciel' ? 'non_verifie' : 'non_concerne';
+    // F6 — catégorie vérifiée contre la table gérable (plus un ENUM en dur) ;
+    // is_logiciel (pas le libellé) détermine si le badge de vérification
+    // s'applique (DECISIONS.md D-2026-09-04-02), pour rester correct même
+    // si la catégorie "Logiciel" est renommée depuis le Panel Admin.
+    const [catRows] = await db.execute('SELECT is_logiciel FROM community_categories WHERE nom = ?', [categorie]);
+    if (catRows.length === 0) return res.status(400).json({ success: false, message: 'Catégorie invalide' });
+    const verificationStatus = catRows[0].is_logiciel ? 'non_verifie' : 'non_concerne';
 
     const [ins] = await db.execute(
       `INSERT INTO community_resources
@@ -143,7 +189,7 @@ exports.createResource = async (req, res) => {
 
     const username = req.user.nextcloud_username;
     const wd       = userWebdav(req);
-    const folder   = CATEGORY_FOLDER[categorie];
+    const folder   = sanitizeFolderName(categorie);
 
     await mkdirSafe(wd, username, '/Communautaire');
     await mkdirSafe(wd, username, `/Communautaire/${folder}`);
@@ -278,8 +324,9 @@ exports.setVerification = async (req, res) => {
 
     const [rows] = await db.execute('SELECT categorie FROM community_resources WHERE id = ?', [id]);
     if (rows.length === 0) return res.status(404).json({ success: false, message: 'Ressource introuvable' });
-    if (rows[0].categorie !== 'Logiciel') {
-      return res.status(400).json({ success: false, message: 'Vérification réservée à la catégorie Logiciel' });
+    const [catRows] = await db.execute('SELECT is_logiciel FROM community_categories WHERE nom = ?', [rows[0].categorie]);
+    if (!catRows[0]?.is_logiciel) {
+      return res.status(400).json({ success: false, message: 'Vérification réservée aux catégories de type logiciel' });
     }
 
     await db.execute(

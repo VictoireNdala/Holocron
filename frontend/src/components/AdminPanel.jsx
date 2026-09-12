@@ -6,6 +6,8 @@ import {
   listPriorityFolders, createPriorityFolder, deletePriorityFolder,
   listActivityLogs, listFaculties, listLevels, listFacultyFilieres,
   listAdminUsers, toggleUserActive, listMatricules, addMatricule, deleteMatricule,
+  listCategories, createFaculty, deleteFaculty, createFiliereEntry, deleteFiliereEntry,
+  createLevelEntry, deleteLevelEntry, createCategoryEntry, deleteCategoryEntry,
 } from '../services/api';
 
 const FILIERES = ['Genie Logiciel', 'Intelligence Artificielle', 'Systemes Informatiques'];
@@ -22,6 +24,7 @@ const PERMISSIONS = [
   { value:'gerer_utilisateurs',      label:'Gérer les utilisateurs' },
   { value:'gerer_dossiers',          label:'Gérer les dossiers prioritaires' },
   { value:'voir_logs',               label:"Voir les journaux d'activité" },
+  { value:'gerer_taxonomie',         label:'Gérer la taxonomie (facultés, niveaux, catégories)' },
 ];
 
 const ACTION_LABELS = {
@@ -42,11 +45,18 @@ function Pill({ T, active, onClick, children }) {
 }
 
 const SUB_TABS = [
-  { id:'users',   label:'Utilisateurs',         perm:'gerer_utilisateurs' },
-  { id:'matricules', label:'Matricules',        perm:'gerer_matricules' },
-  { id:'admins',  label:'Administrateurs',      perm:null },
-  { id:'folders', label:'Dossiers prioritaires', perm:'gerer_dossiers' },
-  { id:'logs',    label:"Journaux d'activité",  perm:'voir_logs' },
+  { id:'users',   label:'Utilisateurs',         perm:'gerer_utilisateurs',
+    desc:"Voir les comptes inscrits, filtrer par rôle et activer/désactiver un accès." },
+  { id:'matricules', label:'Matricules',        perm:'gerer_matricules',
+    desc:"Liste blanche des matricules autorisés à s'inscrire — ajouter ou retirer un matricule." },
+  { id:'admins',  label:'Administrateurs',      perm:null,
+    desc:"Voir qui a des droits admin et lesquels ; un super admin peut en attribuer ou en retirer." },
+  { id:'folders', label:'Dossiers prioritaires', perm:'gerer_dossiers',
+    desc:"Mettre en avant une faculté/niveau dans le catalogue de l'Espace communautaire." },
+  { id:'logs',    label:"Journaux d'activité",  perm:'voir_logs',
+    desc:"Historique des actions sensibles (dépôts, vérifications, droits admin...) — filtrable." },
+  { id:'taxonomy', label:'Taxonomie',           perm:'gerer_taxonomie',
+    desc:"Facultés, filières, niveaux et catégories de l'Espace communautaire — créer, retirer, sans toucher au code." },
 ];
 
 export default function AdminPanel({ T, isMobile, isSuperAdmin, permissions = [] }) {
@@ -70,7 +80,10 @@ export default function AdminPanel({ T, isMobile, isSuperAdmin, permissions = []
         ))}
       </div>
 
-      {isMobile && ['admins', 'folders', 'matricules'].includes(sub) && (
+      {SUB_TABS.find(t => t.id === sub)?.desc && (
+        <p style={{ color:T.textMuted, fontSize:'12.5px', margin:'0 0 16px' }}>{SUB_TABS.find(t => t.id === sub).desc}</p>
+      )}
+      {isMobile && ['admins', 'folders', 'matricules', 'taxonomy'].includes(sub) && (
         <p style={{ color:T.textMuted, fontSize:'12px', margin:'0 0 16px' }}>Création et attribution disponibles sur la version desktop.</p>
       )}
 
@@ -79,6 +92,7 @@ export default function AdminPanel({ T, isMobile, isSuperAdmin, permissions = []
       {sub === 'admins'     && <AdminsTab     T={T} isMobile={isMobile} isSuperAdmin={isSuperAdmin} card={card} inputStyle={inputStyle} buttonStyle={buttonStyle} />}
       {sub === 'folders'    && <FoldersTab    T={T} isMobile={isMobile} card={card} inputStyle={inputStyle} buttonStyle={buttonStyle} />}
       {sub === 'logs'       && <LogsTab       T={T} isMobile={isMobile} card={card} inputStyle={inputStyle} />}
+      {sub === 'taxonomy'   && <TaxonomyTab   T={T} isMobile={isMobile} card={card} inputStyle={inputStyle} buttonStyle={buttonStyle} />}
     </div>
   );
 }
@@ -514,6 +528,187 @@ function LogsTab({ T, isMobile, card, inputStyle }) {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── Taxonomie Espace communautaire (Axe F6) ──────────────────────────────
+// Les valeurs de départ (Sciences Informatiques, L1-L5, Cours/Logiciel/
+// Media/Autre) n'étaient qu'un échantillon — CRUD simple sur les 4
+// référentiels, plus rien en dur côté code une fois ici.
+function TaxonomyTab({ T, isMobile, card, inputStyle, buttonStyle }) {
+  const [faculties, setFaculties] = useState([]);
+  const [levels, setLevels] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [filieresByFaculty, setFilieresByFaculty] = useState({}); // { [facultyId]: [...] }
+  const [loading, setLoading] = useState(false);
+  const [expandedFaculty, setExpandedFaculty] = useState(null);
+
+  const [newFaculty, setNewFaculty] = useState('');
+  const [newFiliere, setNewFiliere] = useState('');
+  const [newLevel, setNewLevel] = useState('');
+  const [newCategory, setNewCategory] = useState('');
+  const [newCategoryIsLogiciel, setNewCategoryIsLogiciel] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    Promise.all([listFaculties(), listLevels(), listCategories()])
+      .then(([f, l, c]) => { setFaculties(f.data.faculties || []); setLevels(l.data.levels || []); setCategories(c.data.categories || []); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+  useEffect(load, []);
+
+  const loadFilieres = (facultyId) => {
+    listFacultyFilieres(facultyId).then(r => setFilieresByFaculty(prev => ({ ...prev, [facultyId]: r.data.filieres || [] }))).catch(() => {});
+  };
+  const toggleFaculty = (facultyId) => {
+    if (expandedFaculty === facultyId) { setExpandedFaculty(null); return; }
+    setExpandedFaculty(facultyId);
+    if (!filieresByFaculty[facultyId]) loadFilieres(facultyId);
+  };
+
+  const handleAddFaculty = async () => {
+    if (!newFaculty.trim()) return;
+    setSaving(true);
+    try { await createFaculty(newFaculty.trim()); setNewFaculty(''); load(); }
+    catch (err) { alert(err.response?.data?.message || 'Échec de la création.'); }
+    finally { setSaving(false); }
+  };
+  const handleDeleteFaculty = async (id) => {
+    if (!window.confirm('Supprimer cette faculté ? Les ressources déjà classées dessus repasseront en "Général".')) return;
+    try { await deleteFaculty(id); load(); }
+    catch { alert('Échec de la suppression.'); }
+  };
+
+  const handleAddFiliere = async (facultyId) => {
+    if (!newFiliere.trim()) return;
+    setSaving(true);
+    try { await createFiliereEntry(facultyId, newFiliere.trim()); setNewFiliere(''); loadFilieres(facultyId); }
+    catch (err) { alert(err.response?.data?.message || 'Échec de la création.'); }
+    finally { setSaving(false); }
+  };
+  const handleDeleteFiliere = async (facultyId, id) => {
+    if (!window.confirm('Supprimer cette filière ? Les dossiers prioritaires basés dessus seront aussi retirés.')) return;
+    try { await deleteFiliereEntry(id); loadFilieres(facultyId); }
+    catch { alert('Échec de la suppression.'); }
+  };
+
+  const handleAddLevel = async () => {
+    if (!newLevel.trim()) return;
+    setSaving(true);
+    try { await createLevelEntry(newLevel.trim(), levels.length + 1); setNewLevel(''); load(); }
+    catch (err) { alert(err.response?.data?.message || 'Échec de la création.'); }
+    finally { setSaving(false); }
+  };
+  const handleDeleteLevel = async (id) => {
+    if (!window.confirm('Supprimer ce niveau ?')) return;
+    try { await deleteLevelEntry(id); load(); }
+    catch { alert('Échec de la suppression.'); }
+  };
+
+  const handleAddCategory = async () => {
+    if (!newCategory.trim()) return;
+    setSaving(true);
+    try { await createCategoryEntry(newCategory.trim(), newCategoryIsLogiciel, categories.length + 1); setNewCategory(''); setNewCategoryIsLogiciel(false); load(); }
+    catch (err) { alert(err.response?.data?.message || 'Échec de la création.'); }
+    finally { setSaving(false); }
+  };
+  const handleDeleteCategory = async (id) => {
+    if (!window.confirm('Supprimer cette catégorie ? Les ressources déjà déposées sous ce nom ne sont pas affectées.')) return;
+    try { await deleteCategoryEntry(id); load(); }
+    catch { alert('Échec de la suppression.'); }
+  };
+
+  if (loading) return <div style={{ textAlign:'center', padding:'40px' }}><FontAwesomeIcon icon={faSpinner} style={{ color:T.textMuted }} /></div>;
+
+  return (
+    <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:'20px' }}>
+      {/* Facultés + filières imbriquées */}
+      <div style={{ ...card({ padding:'20px' }) }}>
+        <div style={{ fontSize:'13px', fontWeight:'600', color:T.textMuted, textTransform:'uppercase', letterSpacing:'.04em', marginBottom:'14px' }}>Facultés & filières</div>
+        {faculties.length === 0 && <p style={{ color:T.textMuted, fontSize:'13px' }}>Aucune faculté.</p>}
+        {faculties.map(f => (
+          <div key={f.id} style={{ marginBottom:'8px' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 12px', borderRadius:'6px', background:T.surfaceAlt, cursor:'pointer' }} onClick={() => toggleFaculty(f.id)}>
+              <span style={{ fontSize:'13px', fontWeight:'600', color:T.text }}>{f.nom}</span>
+              <span onClick={e => { e.stopPropagation(); handleDeleteFaculty(f.id); }} style={{ fontSize:'12px', color:T.danger, fontWeight:'600' }}>Retirer</span>
+            </div>
+            {expandedFaculty === f.id && (
+              <div style={{ padding:'10px 12px 4px 20px' }}>
+                {(filieresByFaculty[f.id] || []).map(fil => (
+                  <div key={fil.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'6px 0' }}>
+                    <span style={{ fontSize:'12.5px', color:T.text }}>{fil.nom}</span>
+                    <span onClick={() => handleDeleteFiliere(f.id, fil.id)} style={{ fontSize:'11.5px', color:T.danger, fontWeight:'600', cursor:'pointer' }}>Retirer</span>
+                  </div>
+                ))}
+                {(filieresByFaculty[f.id] || []).length === 0 && <p style={{ color:T.textMuted, fontSize:'12px', margin:'4px 0' }}>Aucune filière.</p>}
+                {!isMobile && (
+                  <div style={{ display:'flex', gap:'8px', marginTop:'8px' }}>
+                    <input value={newFiliere} onChange={e => setNewFiliere(e.target.value)} placeholder="Nouvelle filière" style={{ ...inputStyle, fontSize:'12.5px', padding:'7px 10px' }} />
+                    <button onClick={() => handleAddFiliere(f.id)} disabled={saving} style={{ ...buttonStyle, padding:'7px 14px', fontSize:'11.5px' }}>Ajouter</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+        {!isMobile && (
+          <div style={{ display:'flex', gap:'8px', marginTop:'12px' }}>
+            <input value={newFaculty} onChange={e => setNewFaculty(e.target.value)} placeholder="Nouvelle faculté" style={inputStyle} />
+            <button onClick={handleAddFaculty} disabled={saving} style={buttonStyle}>Ajouter</button>
+          </div>
+        )}
+      </div>
+
+      {/* Niveaux */}
+      <div style={{ ...card({ padding:'20px' }) }}>
+        <div style={{ fontSize:'13px', fontWeight:'600', color:T.textMuted, textTransform:'uppercase', letterSpacing:'.04em', marginBottom:'14px' }}>Niveaux</div>
+        <div style={{ display:'flex', gap:'6px', flexWrap:'wrap', marginBottom: isMobile ? 0 : '16px' }}>
+          {levels.map(l => (
+            <span key={l.id} style={{ display:'flex', alignItems:'center', gap:'6px', padding:'6px 12px', borderRadius:'12px', background:T.surfaceAlt, fontSize:'12px', fontWeight:'600', color:T.text }}>
+              {l.nom} <FontAwesomeIcon icon={faTrash} onClick={() => handleDeleteLevel(l.id)} style={{ fontSize:'10px', color:T.danger, cursor:'pointer' }} />
+            </span>
+          ))}
+        </div>
+        {!isMobile && (
+          <div style={{ display:'flex', gap:'8px' }}>
+            <input value={newLevel} onChange={e => setNewLevel(e.target.value)} placeholder="Nouveau niveau (ex. M1)" style={inputStyle} />
+            <button onClick={handleAddLevel} disabled={saving} style={buttonStyle}>Ajouter</button>
+          </div>
+        )}
+      </div>
+
+      {/* Catégories */}
+      <div style={{ ...card({ padding:'20px' }) }}>
+        <div style={{ fontSize:'13px', fontWeight:'600', color:T.textMuted, textTransform:'uppercase', letterSpacing:'.04em', marginBottom:'14px' }}>Catégories de ressources</div>
+        <div style={{ display:'flex', flexDirection:'column', gap:'6px', marginBottom: isMobile ? 0 : '16px' }}>
+          {categories.map(c => (
+            <div key={c.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 12px', borderRadius:'6px', background:T.surfaceAlt }}>
+              <span style={{ fontSize:'13px', color:T.text }}>{c.nom}{c.is_logiciel && <span style={{ color:T.accent, fontSize:'11px', fontWeight:'600', marginLeft:'8px' }}>badges de vérification</span>}</span>
+              <span onClick={() => handleDeleteCategory(c.id)} style={{ fontSize:'12px', color:T.danger, fontWeight:'600', cursor:'pointer' }}>Retirer</span>
+            </div>
+          ))}
+        </div>
+        {!isMobile && (
+          <>
+            <div style={{ display:'flex', gap:'8px', marginBottom:'8px' }}>
+              <input value={newCategory} onChange={e => setNewCategory(e.target.value)} placeholder="Nouvelle catégorie" style={inputStyle} />
+              <button onClick={handleAddCategory} disabled={saving} style={buttonStyle}>Ajouter</button>
+            </div>
+            <label style={{ display:'flex', alignItems:'center', gap:'8px', cursor:'pointer' }}>
+              <input type="checkbox" checked={newCategoryIsLogiciel} onChange={e => setNewCategoryIsLogiciel(e.target.checked)} style={{ width:'14px', height:'14px', accentColor:T.accent, cursor:'pointer' }} />
+              <span style={{ fontSize:'12px', color:T.textMuted }}>Catégorie logiciel (active les badges de vérification)</span>
+            </label>
+          </>
+        )}
+      </div>
+
+      {/* Dossiers prioritaires : voir l'onglet dédié */}
+      {!isMobile && (
+        <p style={{ color:T.textMuted, fontSize:'12px', gridColumn:'1 / -1', margin:0 }}>Les dossiers prioritaires (facultés/niveaux mis en avant dans le catalogue) se gèrent dans l'onglet "Dossiers prioritaires".</p>
       )}
     </div>
   );

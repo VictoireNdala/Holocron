@@ -87,7 +87,7 @@ CREATE TABLE admin_permissions (
     id          INT AUTO_INCREMENT PRIMARY KEY,
     user_id     INT NOT NULL,
     permission  ENUM('verifier_logiciels','moderer_communautaire','gerer_matricules',
-                      'gerer_utilisateurs','gerer_dossiers','voir_logs') NOT NULL,
+                      'gerer_utilisateurs','gerer_dossiers','voir_logs','gerer_taxonomie') NOT NULL,
     granted_by  INT NOT NULL,
     granted_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_user_permission (user_id, permission),
@@ -128,6 +128,21 @@ CREATE TABLE faculty_filieres (
     FOREIGN KEY (faculty_id) REFERENCES faculties(id) ON DELETE CASCADE
 );
 
+-- Catégories de ressources communautaires — table gérable (Axe F6,
+-- DECISIONS.md D-2026-09-12-03) au lieu d'un ENUM en dur. is_logiciel
+-- identifie la catégorie spéciale pour les badges de vérification
+-- (D-2026-09-04-02) PAR FLAG, pas par libellé — renommable depuis le Panel
+-- Admin sans casser la logique de vérification. Pas de FK stricte depuis
+-- community_resources.categorie (VARCHAR simple, voir plus bas) : supprimer
+-- une catégorie ne casse jamais les ressources déjà déposées sous ce nom.
+CREATE TABLE community_categories (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    nom         VARCHAR(100) UNIQUE NOT NULL,
+    is_logiciel BOOLEAN DEFAULT FALSE,
+    ordre       INT DEFAULT 0,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ── Dossiers prioritaires (D2) — voir DECISIONS.md D-2026-09-04-06 ───────────
 -- Un attribut sur un regroupement facette (faculté/filière/niveau), pas un
 -- type de dossier séparé.
@@ -150,7 +165,7 @@ CREATE TABLE community_resources (
     id                   INT AUTO_INCREMENT PRIMARY KEY,
     titre                VARCHAR(200) NOT NULL,
     description          TEXT,
-    categorie            ENUM('Cours','Logiciel','Media','Autre') NOT NULL,
+    categorie            VARCHAR(100) NOT NULL, -- libre (voir community_categories), plus un ENUM depuis l'Axe F6
     faculty_id           INT DEFAULT NULL,   -- NULL = "Général / toutes facultés"
     level_id             INT DEFAULT NULL,   -- NULL = "Tous niveaux"
     cover_image_path     VARCHAR(500) DEFAULT NULL,
@@ -215,6 +230,9 @@ INSERT INTO matricules (matricule, nom, prenom, role, filiere) VALUES
 
 INSERT INTO levels (nom, ordre) VALUES
   ('L1', 1), ('L2', 2), ('L3', 3), ('L4', 4), ('L5', 5);
+
+INSERT INTO community_categories (nom, is_logiciel, ordre) VALUES
+  ('Cours', FALSE, 1), ('Logiciel', TRUE, 2), ('Media', FALSE, 3), ('Autre', FALSE, 4);
 
 INSERT INTO faculties (nom) VALUES ('Sciences Informatiques');
 INSERT INTO faculty_filieres (faculty_id, nom)

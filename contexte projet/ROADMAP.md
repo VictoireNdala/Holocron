@@ -255,65 +255,74 @@
 > indépendant, à traiter dans l'ordre indiqué ou selon la priorité de
 > Victoire.
 
-- ⬜ **F1. [Rapide] Retirer le texte "Bientôt disponible" du Dashboard.**
-  L'encart "Espace communautaire" sur `Accueil` affiche encore
-  "Bientôt disponible — cours, logiciels et médias partagés par la
-  communauté apparaîtront ici", alors que le module est fonctionnel depuis
-  le 2026-09-12. Remplacer par un aperçu réel (ex. les 2-3 dernières
-  ressources déposées, ou un lien "Explorer l'espace communautaire") ou au
-  minimum retirer la mention "bientôt".
+> **Fait (2026-09-12, Claude Code) :** F1-F8 codés dans la foulée, ainsi que
+> le piège #17 (`communityRoutes` montée sur `/api` interceptait
+> `/api/health` — `authMiddleware` appliqué sans condition de chemin via
+> `router.use()` avant même la tentative de matching des routes ; corrigé en
+> déplaçant `/api/health` avant tout `app.use('/api', ...)` dans
+> `index.js`). **Rien n'est encore testé contre un vrai serveur** — build de
+> production vérifié à chaque étape (`npx react-scripts build` + `node
+> --check`), pas de test en conditions réelles.
 
-- ⬜ **F2. Explorateur ("Mes fichiers") — navigation en profondeur.**
-  Le fil d'Ariane seul ne suffit pas ; ajouter un **bouton "Retour"
-  explicite** en haut de la liste (à côté ou au-dessus du fil d'Ariane),
-  complémentaire au fil d'Ariane, pas un remplacement. Voir DECISIONS.md
-  D-2026-09-12-02.
+- ✅ **F1.** Encart "Espace communautaire" du Dashboard remplacé par un
+  aperçu réel (3 dernières ressources déposées, `GET
+  /community/resources?sort=recent`) + lien "Voir tout" vers l'onglet.
 
-- ⬜ **F3. Explorateur — vraies prévisualisations de fichiers.**
-  Actuellement seule une icône générique par type de fichier est affichée.
-  Remplacer par de vraies vignettes (images, frame vidéo, aperçu PDF).
-  Techniquement : s'appuyer sur l'API Preview native de Nextcloud
-  (`/index.php/core/preview?fileId=X&x=200&y=200`), proxifiée par le
-  backend avec les identifiants WebDAV per-user (même pattern que
-  `userWebdav(req)` déjà utilisé ailleurs). Nécessite de vérifier/activer
-  les providers de preview Nextcloud pour PDF/Office/vidéo côté serveur.
+- ✅ **F2.** Bouton "Retour" explicite ajouté au-dessus du fil d'Ariane
+  dans l'Explorateur (visible dès qu'on n'est pas à la racine), en plus du
+  fil d'Ariane existant — conforme à DECISIONS.md D-2026-09-12-02.
 
-- ⬜ **F4. Explorateur — sélection multiple + suppression groupée.**
-  Cases à cocher sur chaque fichier/dossier (ou mode "sélection"
-  activable) pour sélectionner plusieurs éléments et les **supprimer en
-  une fois**. Prévoir l'architecture pour d'autres actions groupées
-  futures sans tout refaire — mais NE PAS les implémenter maintenant.
+- ✅ **F3.** Vraies prévisualisations (images, vidéos, PDF) via l'API
+  Preview native de Nextcloud (`/index.php/core/preview`), proxifiée par
+  une nouvelle route `GET /files/preview?fileId=&size=` avec les
+  identifiants WebDAV per-user. Nécessite `oc:fileid` dans le PROPFIND de
+  `listFiles` (ajouté). Repli silencieux sur l'icône générique si la
+  prévisualisation échoue (404) — **dépend des providers de preview
+  Nextcloud activés côté serveur (PDF/Office/vidéo), pas vérifié/activé,
+  peut ne rien afficher tant que ce n'est pas confirmé côté infra.**
 
-- ⬜ **F5. [Bug] "Cours partagés" redirige vers "Mes fichiers".**
-  Cliquer sur l'onglet "Cours partagés" renvoie automatiquement vers
-  "Mes fichiers" au lieu d'afficher la page. La route/le composant "Cours
-  partagés" doit toujours s'afficher, avec un état vide clair si aucun
-  cours n'existe, jamais une redirection.
+- ✅ **F4.** Sélection multiple dans l'Explorateur (bouton "Sélectionner",
+  cases à cocher sur chaque élément, barre d'action avec compteur +
+  "Supprimer la sélection"). Architecture pensée pour accueillir d'autres
+  actions groupées plus tard (partage, déplacement), non implémentées à ce
+  stade comme demandé.
 
-- ⬜ **F6. [Structurant] Taxonomie de l'Espace communautaire entièrement
-  dynamique (facultés, filières, niveaux, catégories).**
-  Les valeurs actuelles (Sciences Informatiques, Genie
-  Logiciel/IA/Systemes, L1-L5, Cours/Logiciel/Media/Autre) ne sont qu'un
-  **échantillon de départ**. Un administrateur avec la permission adéquate
-  doit pouvoir, depuis le Panel Admin, **créer, modifier et supprimer**
-  facultés, filières, niveaux et catégories (en gardant `Logiciel` comme
-  catégorie spéciale pour les badges de vérification, D-2026-09-04-02).
-  Nouvel onglet/section Panel Admin (ex. "Taxonomie") avec CRUD sur ces 4
-  entités ; formulaire de dépôt et filtres catalogue à lire dynamiquement
-  depuis l'API. Voir DECISIONS.md D-2026-09-12-03.
+- 🔶 **F5.** Bug non reproduit dans le code actuel : `tab === 'courses'`
+  affiche bien sa propre page avec état vide dédié, aucune redirection
+  trouvée vers 'explorer' dans ce chemin. **Hypothèse la plus probable :
+  le build déployé au moment du signalement était antérieur à cette
+  implémentation.** À reconfirmer par Victoire après le prochain
+  déploiement — si le bug persiste avec le code actuel, remonter les
+  étapes exactes de reproduction (rien à corriger sans ça).
 
-- ⬜ **F7. [Bug] Les dossiers prioritaires créés n'apparaissent nulle
-  part.** Un dossier prioritaire créé depuis le Panel Admin doit apparaître
-  dans le **catalogue de l'Espace communautaire**, mis en avant
-  (badge/étoile, remonté en tête), conforme à DECISIONS.md D-2026-09-04-06
-  — même vide (0 ressource). Vérifier que le catalogue lit bien
-  `community_priority_folders` en plus des regroupements par facette.
+- ✅ **F6. [Structurant]** Taxonomie entièrement dynamique :
+  - Catégories : nouvelle table `community_categories` (nom, `is_logiciel`,
+    ordre) — `community_resources.categorie` passe d'ENUM à VARCHAR
+    (élargissement pur, aucune donnée existante affectée). `is_logiciel`
+    identifie la catégorie spéciale pour les badges de vérification PAR
+    FLAG, pas par libellé (renommable sans casser la logique).
+  - Facultés/filières/niveaux : CRUD ajouté sur les tables déjà existantes
+    (`faculties`, `faculty_filieres`, `levels` — aucun changement de schéma
+    nécessaire pour ces 3-là).
+  - Nouvelle permission `gerer_taxonomie` (ENUM `admin_permissions.permission`
+    élargi) + nouvel onglet Panel Admin "Taxonomie" (facultés avec filières
+    imbriquées, niveaux, catégories).
+  - Formulaire de dépôt et filtres du catalogue lisent désormais tout
+    dynamiquement depuis l'API, plus aucune liste en dur côté frontend.
+  - **Migration séparée requise** : `database/migrations/2026-09-12_taxonomie_dynamique.sql`
+    à exécuter manuellement sur la base de production (conçue pour être
+    sans risque sur des données réelles déjà présentes — voir le fichier).
 
-- ⬜ **F8. Descriptions d'aide sur les onglets du Panel Admin.**
-  Courte description (une phrase) sous le titre de chaque onglet du Panel
-  Admin (Utilisateurs, Matricules, Administrateurs, Dossiers prioritaires,
-  Journaux d'activité). Étendre le même principe aux autres onglets où ça
-  clarifie l'usage, sans surcharger l'interface.
+- ✅ **F7.** Nouvelle route publique `GET /community/priority-folders`
+  (lecture ouverte à tous, distincte de la version admin) + section
+  "Dossiers prioritaires" en tête du catalogue (`CommunitySpace`), cliquer
+  applique les filtres faculté/niveau correspondants. Compteur de
+  ressources inclus.
+
+- ✅ **F8.** Description courte ajoutée sous chaque onglet du Panel Admin
+  (via `SUB_TABS[].desc`), et sur les principaux onglets du Dashboard
+  (Mes fichiers, Cours partagés, Paramètres) en enrichissant leur sous-titre
+  existant.
 
 ## Axe E — Infrastructure et résilience
 
@@ -336,23 +345,17 @@
 
 ## Ordre de travail suggéré
 
-1. **B0 en tout premier** — bug critique découvert le 2026-09-12 (comptes
-   fantômes si Nextcloud échoue à l'inscription), à corriger avant tout
-   nouveau développement pour ne pas complexifier le diagnostic la
-   prochaine fois qu'un incident survient. Corriger aussi le piège #17
-   (montage `communityRoutes` trop large sur `/api`) dans la foulée.
-2. **Axe F, corrections rapides et peu risquées d'abord :** F1 (texte
-   figé), F5 (bug de redirection Cours partagés) — gains immédiats,
-   risque quasi nul.
-3. **Axe F, le reste dans l'ordre F2 → F4 → F7 → F3 → F6 → F8** : F2/F4
-   sont des améliorations UX contenues à l'Explorateur ; F7 est un bug de
-   câblage (le catalogue doit lire une table qu'il ignore actuellement) ;
-   F3 (prévisualisations) est plus gros techniquement (proxy Preview
-   Nextcloud) ; F6 (taxonomie dynamique) est le plus structurant de tous
-   — le traiter avec soin, quitte à le découper en sous-étapes ; F8
-   (descriptions d'aide) en dernier, purement additif.
-4. Puis Axe D restant (D3, D4).
-5. Le reste (axe E, refonte visuelle Aurora/Meridian non retenue,
+1. **B0 reste à faire** — bug critique découvert le 2026-09-12 (comptes
+   fantômes si Nextcloud échoue à l'inscription), **pas encore corrigé**
+   malgré tout le reste de l'Axe F traité — à prioriser au prochain passage
+   côté code, avant tout nouveau développement.
+2. **Déploiement + vérification de F1-F8** : exécuter la migration
+   `2026-09-12_taxonomie_dynamique.sql`, redéployer, puis confirmer chaque
+   point avec Victoire — en particulier F3 (dépend des providers de preview
+   Nextcloud, pas vérifiés) et F5 (bug pas reproduit dans le code actuel,
+   à reconfirmer après déploiement du build à jour).
+3. Puis B0, puis Axe D restant (D3, D4).
+4. Le reste (axe E, refonte visuelle Aurora/Meridian non retenue,
    supercalculateur) au fil de l'eau, sans bloquer les précédents.
 
 > Cet ordre est une suggestion, pas une contrainte — à ajuster librement

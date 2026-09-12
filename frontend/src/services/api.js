@@ -38,6 +38,7 @@ export const uploadFile = (path, file, onProgress, signal) => {
 };
 
 export const downloadFile = (path) => API.get(`/files/download?path=${encodeURIComponent(path)}`, { responseType: 'blob' });
+export const getFilePreview = (fileId, size = 160) => API.get(`/files/preview?fileId=${fileId}&size=${size}`, { responseType: 'blob' });
 export const createFolder = (path) => API.post('/files/mkdir', { path });
 export const deleteFile   = (path) => API.delete('/files/delete', { data: { path } });
 
@@ -71,6 +72,8 @@ export const downloadSubmission     = (id) => API.get(`/submissions/download/${i
 // ── Espace communautaire ─────────────────────────────────────────────────
 export const listFaculties = () => API.get('/faculties');
 export const listLevels    = () => API.get('/levels');
+export const listPublicPriorityFolders = () => API.get('/community/priority-folders');
+export const listCategories = () => API.get('/community/categories');
 
 export const listCommunityResources = (params = {}) => {
   const q = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v)));
@@ -112,3 +115,13 @@ export const toggleUserActive  = (userId) => API.patch(`/admin/users/${userId}/t
 export const listMatricules  = (q = '') => API.get(`/admin/matricules?q=${encodeURIComponent(q)}`);
 export const addMatricule    = (data)   => API.post('/admin/matricules', data);
 export const deleteMatricule = (matricule) => API.delete(`/admin/matricules/${matricule}`);
+
+// ── Taxonomie Espace communautaire (Axe F6) ──────────────────────────────
+export const createFaculty = (nom) => API.post('/admin/faculties', { nom });
+export const deleteFaculty = (id)  => API.delete(`/admin/faculties/${id}`);
+export const createFiliereEntry = (facultyId, nom) => API.post('/admin/faculty-filieres', { faculty_id: facultyId, nom });
+export const deleteFiliereEntry = (id) => API.delete(`/admin/faculty-filieres/${id}`);
+export const createLevelEntry = (nom, ordre) => API.post('/admin/levels', { nom, ordre });
+export const deleteLevelEntry = (id) => API.delete(`/admin/levels/${id}`);
+export const createCategoryEntry = (nom, isLogiciel, ordre) => API.post('/admin/categories', { nom, is_logiciel: isLogiciel, ordre });
+export const deleteCategoryEntry = (id) => API.delete(`/admin/categories/${id}`);

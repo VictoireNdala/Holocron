@@ -6,6 +6,7 @@ const { authMiddleware } = require('../middleware/authMiddleware');
 router.get('/list',     authMiddleware, fileController.listFiles);
 router.post('/upload',  authMiddleware, fileController.uploadMiddleware, fileController.uploadFile);
 router.get('/download', authMiddleware, fileController.downloadFile);
+router.get('/preview',  authMiddleware, fileController.filePreview);
 router.post('/mkdir',   authMiddleware, fileController.createFolder);
 // Suppression équilibrée (B2) : ouvert à tous les rôles, la restriction
 // "étudiant hors Team Folders Cours-*" est appliquée dans le contrôleur.

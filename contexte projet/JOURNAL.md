@@ -7,6 +7,66 @@
 
 ---
 
+## 2026-09-12 (suite 3) — Axe F (F1-F8) codé + correctif piège #17
+
+**Contexte :** Victoire demande confirmation que les 8 points remontés
+après le premier usage réel (Axe F de `ROADMAP.md`) ont bien été codés,
+puis de s'y mettre — rien ne l'avait encore été à ce stade.
+
+**Ce qui a été fait :**
+- **F1** : encart "Espace communautaire" du Dashboard remplacé par un vrai
+  aperçu (3 dernières ressources) au lieu du texte "Bientôt disponible"
+  figé.
+- **F2** : bouton "Retour" explicite ajouté au-dessus du fil d'Ariane dans
+  l'Explorateur (D-2026-09-12-02).
+- **F3** : vraies prévisualisations (images/vidéos/PDF) via l'API Preview
+  Nextcloud, proxifiée par une nouvelle route `GET /files/preview`
+  (identifiants per-user, `oc:fileid` ajouté au PROPFIND). Repli sur
+  l'icône générique si indisponible.
+- **F4** : sélection multiple + suppression groupée dans l'Explorateur
+  (mode "Sélectionner", cases à cocher, barre d'action).
+- **F5** : bug non reproduit dans le code actuel — `tab === 'courses'`
+  affiche déjà correctement sa propre page avec état vide. Hypothèse : le
+  build déployé au moment du signalement était antérieur à cette
+  implémentation (2026-09-04/05). À reconfirmer après le prochain
+  déploiement plutôt que de "corriger" un code qui semble déjà correct.
+- **F6 (le plus gros)** : taxonomie entièrement dynamique.
+  `community_resources.categorie` passe d'ENUM à VARCHAR (élargissement
+  sans risque sur les données déjà réelles) ; nouvelle table
+  `community_categories` (nom, `is_logiciel`, ordre) ; nouvelle permission
+  `gerer_taxonomie` ; nouvel onglet Panel Admin "Taxonomie" (CRUD facultés
+  avec filières imbriquées, niveaux, catégories) ; formulaire de dépôt et
+  filtres catalogue branchés dynamiquement. Voir DECISIONS.md
+  D-2026-09-12-04 pour le choix VARCHAR + flag plutôt qu'une FK stricte.
+  **Migration séparée à exécuter manuellement** :
+  `database/migrations/2026-09-12_taxonomie_dynamique.sql`.
+- **F7** : nouvelle route publique `GET /community/priority-folders` +
+  section dédiée en tête du catalogue, avec compteur de ressources.
+- **F8** : descriptions courtes ajoutées sous chaque onglet du Panel Admin
+  et sur les principaux onglets du Dashboard.
+- **Piège #17 corrigé** : `/api/health` déplacé avant tous les
+  `app.use('/api/...')` dans `index.js` — `communityRoutes` appliquait
+  `authMiddleware` sans condition de chemin (`router.use()`) avant même la
+  tentative de matching, interceptant `/api/health`.
+- Build de production revérifié après chaque étape (`npx react-scripts
+  build`), `node --check` OK sur tout le backend modifié.
+
+**Ce qui reste en suspens :**
+- **B0 (rollback `register`) toujours pas corrigé** — reste la priorité
+  absolue pour la prochaine session côté code.
+- Rien de cette session n'a été testé contre un vrai Nextcloud/MySQL —
+  seule la compilation a été vérifiée.
+- F3 dépend des providers de preview Nextcloud (PDF/Office/vidéo) côté
+  serveur, jamais vérifiés/activés — peut ne rien afficher pour ces types
+  tant que ce n'est pas confirmé.
+- F5 à reconfirmer par Victoire après déploiement du build à jour — pas de
+  changement de code puisqu'aucun bug n'a été retrouvé dans la source
+  actuelle.
+- Migration `2026-09-12_taxonomie_dynamique.sql` pas encore exécutée en
+  production.
+
+---
+
 ## 2026-09-12 (suite) — Premier retour d'usage réel + repromotion admin
 
 **Contexte :** après la migration disque de la veille/du matin, premier

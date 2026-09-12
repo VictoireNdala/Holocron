@@ -2,21 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faUpload, faDownload, faFlag, faArrowLeft, faSpinner, faFolderOpen,
-  faFileLines, faFileZipper, faTable, faFile, faMagnifyingGlass,
+  faFileLines, faFileZipper, faTable, faFile, faMagnifyingGlass, faStar,
 } from '@fortawesome/free-solid-svg-icons';
 import {
   listFaculties, listLevels, listCommunityResources, getCommunityResource,
   createCommunityResource, downloadCommunityResource, reportCommunityResource,
   getCommunityResourceCover, setResourceVerification, deleteCommunityResource,
+  listPublicPriorityFolders, listCategories,
 } from '../services/api';
 
-const CATEGORIES = [
-  { value: '',        label: 'Tous' },
-  { value: 'Cours',    label: 'Cours' },
-  { value: 'Logiciel', label: 'Logiciel' },
-  { value: 'Media',    label: 'Média' },
-  { value: 'Autre',    label: 'Autre' },
-];
+// F6 — les catégories sont maintenant gérables depuis le Panel Admin
+// (table community_categories, plus un ENUM en dur) : plus de liste figée
+// ici, tout vient de l'API. Icônes de repli connues pour les 4 catégories
+// de départ ; toute catégorie créée après coup retombe sur faFile.
 const CATEGORY_ICON = { Cours: faFileLines, Logiciel: faFileZipper, Media: faTable, Autre: faFile };
 
 const fmtSize = (bytes) => {
@@ -80,7 +78,7 @@ function ResourceCard({ T, r, onClick }) {
       <Cover T={T} resourceId={r.id} coverImagePath={r.cover_image_path} categorie={r.categorie} />
       <div style={{ marginTop:'12px', fontSize:'13.5px', fontWeight:'600', color:T.text, lineHeight:'1.3' }}>{r.titre}</div>
       <div style={{ fontSize:'11.5px', color:T.textMuted, marginTop:'4px' }}>{r.uploader_prenom} {r.uploader_nom?.[0]}. · {r.categorie === 'Media' ? 'Média' : r.categorie}</div>
-      {r.categorie === 'Logiciel' && (
+      {r.verification_status && r.verification_status !== 'non_concerne' && (
         <div style={{ marginTop:'8px' }}><VerificationBadge T={T} status={r.verification_status} /></div>
       )}
     </div>
@@ -98,7 +96,7 @@ function ResourceRow({ T, r, onClick }) {
       <div style={{ flex:1, minWidth:0 }}>
         <div style={{ fontSize:'13px', fontWeight:'600', color:T.text, lineHeight:'1.3', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.titre}</div>
         <div style={{ fontSize:'11px', color:T.textMuted, marginTop:'3px' }}>{r.uploader_prenom} {r.uploader_nom?.[0]}. · {r.categorie === 'Media' ? 'Média' : r.categorie}</div>
-        {r.categorie === 'Logiciel' && (
+        {r.verification_status && r.verification_status !== 'non_concerne' && (
           <div style={{ marginTop:'6px' }}><VerificationBadge T={T} status={r.verification_status} /></div>
         )}
       </div>
@@ -112,6 +110,8 @@ export default function CommunitySpace({ T, isMobile, isSuperAdmin, permissions 
   const [view, setView] = useState('catalogue'); // 'catalogue' | 'detail' | 'upload'
   const [faculties, setFaculties] = useState([]);
   const [levels, setLevels] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [priorityFolders, setPriorityFolders] = useState([]);
   const [resources, setResources] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState({ category:'', faculty:'', level:'', q:'' });
@@ -121,7 +121,7 @@ export default function CommunitySpace({ T, isMobile, isSuperAdmin, permissions 
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const [uploadForm, setUploadForm] = useState({ titre:'', description:'', categorie:'Cours', faculty_id:'', level_id:'' });
+  const [uploadForm, setUploadForm] = useState({ titre:'', description:'', categorie:'', faculty_id:'', level_id:'' });
   const [uploadFile_, setUploadFile_] = useState(null);
   const [uploadCover, setUploadCover] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -130,6 +130,12 @@ export default function CommunitySpace({ T, isMobile, isSuperAdmin, permissions 
   useEffect(() => {
     listFaculties().then(r => setFaculties(r.data.faculties || [])).catch(() => {});
     listLevels().then(r => setLevels(r.data.levels || [])).catch(() => {});
+    listPublicPriorityFolders().then(r => setPriorityFolders(r.data.folders || [])).catch(() => {});
+    listCategories().then(r => {
+      const cats = r.data.categories || [];
+      setCategories(cats);
+      setUploadForm(f => ({ ...f, categorie: f.categorie || cats[0]?.nom || '' }));
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -190,11 +196,12 @@ export default function CommunitySpace({ T, isMobile, isSuperAdmin, permissions 
     e.preventDefault();
     setUploadError('');
     if (!uploadForm.titre.trim()) return setUploadError('Le titre est requis');
+    if (!uploadForm.categorie) return setUploadError('La catégorie est requise');
     if (!uploadFile_) return setUploadError('Un fichier est requis');
     setUploading(true);
     try {
       await createCommunityResource({ ...uploadForm, fichier: uploadFile_, cover_image: uploadCover });
-      setUploadForm({ titre:'', description:'', categorie:'Cours', faculty_id:'', level_id:'' });
+      setUploadForm({ titre:'', description:'', categorie: categories[0]?.nom || '', faculty_id:'', level_id:'' });
       setUploadFile_(null); setUploadCover(null);
       setView('catalogue');
       setFilters(f => ({ ...f })); // redéclenche le chargement du catalogue
@@ -231,8 +238,8 @@ export default function CommunitySpace({ T, isMobile, isSuperAdmin, permissions 
               <div>
                 <label style={{ fontSize:'12px', fontWeight:'600', color:T.textMuted, marginBottom:'6px', display:'block' }}>Catégorie</label>
                 <div style={{ display:'flex', gap:'6px', flexWrap:'wrap' }}>
-                  {CATEGORIES.filter(c => c.value).map(c => (
-                    <Pill key={c.value} T={T} active={uploadForm.categorie === c.value} onClick={() => setUploadForm(f => ({ ...f, categorie:c.value }))}>{c.label}</Pill>
+                  {categories.map(c => (
+                    <Pill key={c.id} T={T} active={uploadForm.categorie === c.nom} onClick={() => setUploadForm(f => ({ ...f, categorie:c.nom }))}>{c.nom === 'Media' ? 'Média' : c.nom}</Pill>
                   ))}
                 </div>
               </div>
@@ -329,7 +336,7 @@ export default function CommunitySpace({ T, isMobile, isSuperAdmin, permissions 
           </div>
         </div>
 
-        {r.categorie === 'Logiciel' && r.verification_status !== 'non_concerne' && (
+        {r.verification_status && r.verification_status !== 'non_concerne' && (
           <div style={{ ...card({ padding:'20px' }), marginBottom:'20px' }}>
             <div style={{ fontSize:'12.5px', fontWeight:'600', color:T.textMuted, textTransform:'uppercase', letterSpacing:'.04em', marginBottom:'12px' }}>Statut de vérification</div>
             <div style={{ display:'flex', alignItems:'center', gap:'10px', flexWrap:'wrap' }}>
@@ -347,7 +354,7 @@ export default function CommunitySpace({ T, isMobile, isSuperAdmin, permissions 
           <div style={{ ...card({ padding:'20px' }), marginBottom:'20px' }}>
             <div style={{ fontSize:'12.5px', fontWeight:'600', color:T.textMuted, textTransform:'uppercase', letterSpacing:'.04em', marginBottom:'12px' }}>Modération</div>
             <div style={{ display:'flex', gap:'16px', flexWrap:'wrap' }}>
-              {canVerify && r.categorie === 'Logiciel' && (
+              {canVerify && r.verification_status && r.verification_status !== 'non_concerne' && (
                 <>
                   <span onClick={() => handleSetVerification(r.id, 'verifie')} style={{ fontSize:'12.5px', color:T.accent, fontWeight:'600', cursor:'pointer' }}>Marquer vérifié</span>
                   <span onClick={() => handleSetVerification(r.id, 'dangereux')} style={{ fontSize:'12.5px', color:T.danger, fontWeight:'600', cursor:'pointer' }}>Marquer dangereux</span>
@@ -391,12 +398,30 @@ export default function CommunitySpace({ T, isMobile, isSuperAdmin, permissions 
         </button>
       </div>
 
+      {priorityFolders.length > 0 && (
+        <div style={{ marginBottom:'20px' }}>
+          <div style={{ fontSize:'12px', fontWeight:'600', color:T.textMuted, textTransform:'uppercase', letterSpacing:'.04em', marginBottom:'10px' }}>Dossiers prioritaires</div>
+          <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(240px, 1fr))', gap:'12px' }}>
+            {priorityFolders.map(pf => (
+              <div key={pf.id} onClick={() => setFilters(f => ({ ...f, faculty:String(pf.faculty_id), level: pf.level_id ? String(pf.level_id) : '' }))}
+                style={{ background:T.surface, borderRadius:'6px', padding:'14px 16px', cursor:'pointer', border:`1px solid ${T.accent}30` }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'4px' }}>
+                  <FontAwesomeIcon icon={faStar} style={{ color:T.accent, fontSize:'11px' }} />
+                  <span style={{ fontSize:'13px', fontWeight:'600', color:T.text }}>{pf.faculty_nom}{pf.filiere_nom ? ` › ${pf.filiere_nom}` : ''}{pf.level_nom ? ` › ${pf.level_nom}` : ''}</span>
+                </div>
+                <div style={{ fontSize:'11.5px', color:T.textMuted }}>{pf.resource_count || 0} ressource{(pf.resource_count || 0) > 1 ? 's' : ''}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div style={{ display:'flex', flexDirection:'column', gap:'12px', marginBottom:'20px' }}>
         <div style={{ display:'flex', gap:'4px', background: isMobile ? 'transparent' : T.surface, borderRadius:'8px', padding: isMobile ? 0 : '3px', width: isMobile ? '100%' : 'fit-content', overflowX: isMobile ? 'auto' : 'visible', flexWrap: isMobile ? 'nowrap' : 'wrap' }}>
-          {CATEGORIES.map(c => (
-            <span key={c.value} onClick={() => setFilters(f => ({ ...f, category:c.value }))}
-              style={{ padding: isMobile ? '6px 12px' : '6px 14px', borderRadius: isMobile ? '12px' : '6px', fontSize: isMobile ? '11.5px' : '12px', fontWeight:'600', cursor:'pointer', flexShrink:0, whiteSpace:'nowrap', background: isMobile ? (filters.category === c.value ? T.accentDim : T.surfaceAlt) : (filters.category === c.value ? T.bg : 'transparent'), color: filters.category === c.value ? (isMobile ? T.accent : T.text) : T.textMuted }}>
-              {c.label}
+          {[{ id:'all', nom:'' }, ...categories].map(c => (
+            <span key={c.id} onClick={() => setFilters(f => ({ ...f, category:c.nom }))}
+              style={{ padding: isMobile ? '6px 12px' : '6px 14px', borderRadius: isMobile ? '12px' : '6px', fontSize: isMobile ? '11.5px' : '12px', fontWeight:'600', cursor:'pointer', flexShrink:0, whiteSpace:'nowrap', background: isMobile ? (filters.category === c.nom ? T.accentDim : T.surfaceAlt) : (filters.category === c.nom ? T.bg : 'transparent'), color: filters.category === c.nom ? (isMobile ? T.accent : T.text) : T.textMuted }}>
+              {c.nom === '' ? 'Tous' : c.nom === 'Media' ? 'Média' : c.nom}
             </span>
           ))}
         </div>

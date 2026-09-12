@@ -122,9 +122,10 @@ tables supplémentaires :
 
 | Table | Rôle |
 |---|---|
-| `faculties` | Liste des facultés (id, nom) — extensible par l'admin (CRUD complet prévu, Axe F6) |
-| `levels` | Niveaux (id, nom, ordre) — L1 à L5 au départ, reutilisables entre facultés (encore en dur côté frontend, Axe F6) |
-| `community_resources` | id, titre, description, categorie (Cours/Logiciel/Media/Autre), faculty_id (nullable = "Général/toutes facultés"), level_id (nullable = "Tous niveaux"), cover_image_path (upload manuel, facultatif), fichier_path, fichier_nom, taille, uploader_id, downloads_count, verification_status (non_concerne/non_verifie/verifie/dangereux), verified_by, verified_at, status (visible/masque), created_at |
+| `faculties` | Facultés (id, nom) — **CRUD complet depuis le Panel Admin, Axe F6 fait le 2026-09-12** |
+| `levels` | Niveaux (id, nom, ordre) — L1-L5 au départ, gérables en CRUD (Axe F6) |
+| `community_categories` | Catégories de ressources (id, nom, `is_logiciel`, ordre) — **nouvelle table, Axe F6/D-2026-09-12-04** ; `is_logiciel` identifie PAR FLAG (pas par libellé) la catégorie spéciale pour les badges de vérification, renommable sans casser la logique |
+| `community_resources` | id, titre, description, categorie (**VARCHAR libre depuis le 2026-09-12**, plus un ENUM — voir `community_categories` pour les valeurs proposées), faculty_id (nullable = "Général/toutes facultés"), level_id (nullable = "Tous niveaux"), cover_image_path (upload manuel, facultatif), fichier_path, fichier_nom, taille, uploader_id, downloads_count, verification_status (non_concerne/non_verifie/verifie/dangereux), verified_by, verified_at, status (visible/masque), created_at |
 | `community_reports` | id, resource_id, reporter_id, raison, created_at — signalements (`POST .../report`) |
 
 Classification par **3 facettes combinables** (Faculté / Niveau / Catégorie),
@@ -139,9 +140,10 @@ catégorie (`/Communautaire/{Cours|Logiciels|Medias|Autre}/{resource_id}_{nom}`,
 + `/Communautaire/_covers/` pour les images de couverture), créés
 automatiquement par le backend au premier dépôt (MKCOL défensif).
 
-**Bug connu (Axe F7) :** un dossier prioritaire créé dans le Panel Admin
-n'apparaît actuellement pas dans le catalogue — le câblage catalogue ↔
-`community_priority_folders` (table ci-dessous) est à vérifier/corriger.
+**F7 fait (2026-09-12) :** les dossiers prioritaires apparaissent
+désormais dans une section dédiée en tête du catalogue (`GET
+/community/priority-folders`, route publique), avec compteur de
+ressources et clic pour appliquer les filtres correspondants.
 
 **Panel Admin avancé + base** (conception validée le 2026-09-04,
 **implémenté et accessible le 2026-09-12** — 5 onglets confirmés
@@ -159,7 +161,9 @@ Dossiers prioritaires, Journaux d'activité) — tables supplémentaires :
 Un **super admin** a tous les droits implicitement. Un **admin simple**
 reçoit des permissions individuelles parmi : `verifier_logiciels`,
 `moderer_communautaire`, `gerer_matricules`, `gerer_utilisateurs`,
-`gerer_dossiers`, `voir_logs`. Voir DECISIONS.md D-2026-09-04-05/06/07 et
+`gerer_dossiers`, `voir_logs`, `gerer_taxonomie` (**ajoutée le 2026-09-12**,
+Axe F6 — CRUD facultés/filières/niveaux/catégories depuis un nouvel onglet
+Panel Admin "Taxonomie"). Voir DECISIONS.md D-2026-09-04-05/06/07 et
 `ROADMAP.md` axe D2 pour les endpoints. Attribuer/retirer les droits admin
 eux-mêmes (`POST /admin/admins/:userId/grant`, `DELETE .../:userId`) est
 **réservé aux super admins** (vérifié dans `adminController.js`, pas
@@ -423,7 +427,8 @@ le 2026-09-12 :**
     Toujours définir les routes "globales" sans auth (`/api/health`) avant
     tout `app.use(...)` de routeur à préfixe large, ou donner à ce dernier
     un préfixe plus spécifique (`/api/community` par exemple, au lieu de
-    `/api`). **Pas encore corrigé dans le code** — à faire par Claude Code.
+    `/api`). **Corrigé le 2026-09-12** — `/api/health` déplacé avant tous
+    les `app.use('/api/...')` dans `index.js`.
 
 ---
 

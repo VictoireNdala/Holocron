@@ -8,6 +8,8 @@ router.use(authMiddleware);
 // Référentiels de classification (voir DECISIONS.md D-2026-09-04-01)
 router.get('/faculties', communityController.listFaculties);
 router.get('/levels',    communityController.listLevels);
+router.get('/community/categories', communityController.listCategories);
+router.get('/community/priority-folders', communityController.listPublicPriorityFolders);
 
 // Catalogue — post-modération, ouvert à tous (voir DECISIONS.md D-2026-09-04-02)
 router.get('/community/resources',     communityController.listResources);

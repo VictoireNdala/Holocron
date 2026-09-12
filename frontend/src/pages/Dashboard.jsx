@@ -9,7 +9,7 @@ import {
   faRightFromBracket, faPlus,
   faLock, faUpload, faIdCard, faEnvelope,
   faEye, faEyeSlash, faFile, faFileZipper,
-  faChevronDown, faChevronRight, faBookOpen,
+  faChevronDown, faChevronRight, faBookOpen, faArrowLeft, faCheckSquare, faSquare,
   faCircleCheck, faFloppyDisk, faSpinner, faXmark,
   faTrashCan, faRotateLeft, faMoon, faSun
 } from '@fortawesome/free-solid-svg-icons';
@@ -20,7 +20,8 @@ import {
   getQuota, getSharedFolders,
   listAssignments, createAssignment, submitAssignment,
   getMySubmissions, getReceivedSubmissions, downloadSubmission,
-  getTrash, restoreTrash, purgeTrashItem, emptyTrash
+  getTrash, restoreTrash, purgeTrashItem, emptyTrash,
+  listCommunityResources, getFilePreview
 } from '../services/api';
 import { getTokens } from '../theme/tokens';
 import CommunitySpace from '../components/CommunitySpace';
@@ -53,6 +54,30 @@ const getFileIcon = (file) => {
   if (m.includes('text'))  return faFile;
   return faFile;
 };
+// F3 — vraie vignette (image/vidéo/PDF) via l'API Preview Nextcloud
+// proxifiée par le backend, repli silencieux sur l'icône générique si la
+// prévisualisation échoue (provider désactivé côté serveur, type non
+// supporté, fileId absent...).
+const PREVIEWABLE_MIME = /^(image|video)\//;
+function FilePreview({ T, file, previewSize = 160, iconSize = 16 }) {
+  const [url, setUrl] = useState(null);
+  const [failed, setFailed] = useState(false);
+  const canPreview = !!file.fileId && (PREVIEWABLE_MIME.test(file.mimeType || '') || file.mimeType === 'application/pdf');
+
+  useEffect(() => {
+    if (!canPreview) return;
+    let objectUrl;
+    getFilePreview(file.fileId, previewSize)
+      .then(res => { objectUrl = URL.createObjectURL(res.data); setUrl(objectUrl); })
+      .catch(() => setFailed(true));
+    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [file.fileId, canPreview, previewSize]);
+
+  if (canPreview && url && !failed) {
+    return <img src={url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:'inherit', display:'block' }} />;
+  }
+  return <FontAwesomeIcon icon={getFileIcon(file)} style={{ fontSize: iconSize, color:T.textMuted }} />;
+}
 const fmtDate = (d) => {
   if (!d) return '';
   try { return new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'short' }); }
@@ -116,15 +141,18 @@ function AssignmentRow({ T, title, subtitle, badge }) {
   );
 }
 
-function ExplorerCard({ T, file, onNavigate, onDownload, onDelete, canDelete }) {
-  const icon = getFileIcon(file);
+function ExplorerCard({ T, file, onNavigate, onDownload, onDelete, canDelete, selectMode, selected, onToggleSelect }) {
   return (
-    <div style={{ ...card(T, { padding:'16px', cursor:'pointer', display:'flex', flexDirection:'column', gap:'10px' }) }}>
+    <div style={{ ...card(T, { padding:'16px', cursor:'pointer', display:'flex', flexDirection:'column', gap:'10px', position:'relative' }) }}>
+      {selectMode && (
+        <FontAwesomeIcon icon={selected ? faCheckSquare : faSquare} onClick={() => onToggleSelect(file.path)}
+          style={{ position:'absolute', top:'10px', right:'10px', fontSize:'16px', color: selected ? T.accent : T.textMuted, cursor:'pointer' }} />
+      )}
       {file.isDirectory ? (
         <FontAwesomeIcon icon={faFolder} onClick={() => onNavigate(file.path)} style={{ fontSize:'32px', color:T.textMuted }} />
       ) : (
-        <div style={{ width:'40px', height:'40px', borderRadius:'8px', background:T.surfaceAlt, display:'flex', alignItems:'center', justifyContent:'center' }}>
-          <FontAwesomeIcon icon={icon} style={{ fontSize:'16px', color:T.textMuted }} />
+        <div style={{ width:'56px', height:'56px', borderRadius:'8px', background:T.surfaceAlt, display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
+          <FilePreview T={T} file={file} previewSize={160} iconSize={20} />
         </div>
       )}
       <div onClick={() => file.isDirectory ? onNavigate(file.path) : null}>
@@ -149,12 +177,15 @@ function ExplorerCard({ T, file, onNavigate, onDownload, onDelete, canDelete }) 
 
 // Vue Liste — reproduit la structure du canvas (icône/nom/taille/date en
 // ligne), vue par défaut de l'Explorateur.
-function ExplorerRow({ T, file, onNavigate, onDownload, onDelete, canDelete, isLast }) {
-  const icon = getFileIcon(file);
+function ExplorerRow({ T, file, onNavigate, onDownload, onDelete, canDelete, isLast, selectMode, selected, onToggleSelect }) {
   return (
     <div style={{ display:'flex', alignItems:'center', gap:'16px', padding:'12px 16px', borderBottom: isLast ? 'none' : `1px solid ${T.border}` }}>
-      <div onClick={() => file.isDirectory && onNavigate(file.path)} style={{ width:'30px', height:'30px', borderRadius:'8px', background:T.surfaceAlt, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, cursor: file.isDirectory ? 'pointer' : 'default' }}>
-        <FontAwesomeIcon icon={file.isDirectory ? faFolder : icon} style={{ fontSize:'13px', color:T.textMuted }} />
+      {selectMode && (
+        <FontAwesomeIcon icon={selected ? faCheckSquare : faSquare} onClick={() => onToggleSelect(file.path)}
+          style={{ fontSize:'15px', color: selected ? T.accent : T.textMuted, cursor:'pointer', flexShrink:0 }} />
+      )}
+      <div onClick={() => file.isDirectory && onNavigate(file.path)} style={{ width:'30px', height:'30px', borderRadius:'8px', background:T.surfaceAlt, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, cursor: file.isDirectory ? 'pointer' : 'default', overflow:'hidden' }}>
+        {file.isDirectory ? <FontAwesomeIcon icon={faFolder} style={{ fontSize:'13px', color:T.textMuted }} /> : <FilePreview T={T} file={file} previewSize={80} iconSize={13} />}
       </div>
       <div onClick={() => file.isDirectory && onNavigate(file.path)} style={{ flex:1, minWidth:0, fontSize:'13.5px', fontWeight:'600', color:T.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', cursor: file.isDirectory ? 'pointer' : 'default' }}>{file.name}</div>
       <div style={{ width:'80px', fontSize:'12.5px', color:T.textMuted, flexShrink:0 }}>{file.isDirectory ? 'Dossier' : formatSize(file.size)}</div>
@@ -216,6 +247,7 @@ export default function Dashboard() {
   const [profile, setProfile]   = useState(null);
   const [quota, setQuota]       = useState(null);   // { used, total, relative }
   const [sharedFolders, setSharedFolders] = useState([]); // Team Folders Cours-* réels
+  const [communityPreview, setCommunityPreview] = useState([]); // 3 dernières ressources communautaires (Accueil)
   const [recentFiles, setRecentFiles] = useState([]); // aperçu dashboard (racine, triés par date)
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   const [showMore, setShowMore] = useState(false); // feuille "Plus" (mobile)
@@ -233,6 +265,9 @@ export default function Dashboard() {
   const [newFolder, setNewFolder]     = useState('');
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [explorerView, setExplorerView] = useState('list'); // 'list' | 'grid'
+  const [selectMode, setSelectMode] = useState(false); // F4 : sélection multiple
+  const [selectedPaths, setSelectedPaths] = useState(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const fileInputRef                  = useRef(null);
   const uploadControllerRef           = useRef(null); // AbortController de l'upload en cours
 
@@ -296,6 +331,12 @@ export default function Dashboard() {
     getSharedFolders().then(r => setSharedFolders(r.data.folders || [])).catch(() => {});
   }, []);
 
+  // Aperçu Espace communautaire sur l'Accueil (F1 — remplace le texte
+  // "Bientôt disponible" figé, le module est fonctionnel depuis le 2026-09-12)
+  useEffect(() => {
+    listCommunityResources({ sort: 'recent' }).then(r => setCommunityPreview((r.data.resources || []).slice(0, 3))).catch(() => {});
+  }, []);
+
   // ── Handlers Explorer ───────────────────────────────────────────────────────
   const loadFiles = async (path) => {
     setFilesLoading(true);
@@ -338,6 +379,31 @@ export default function Dashboard() {
     if (!window.confirm('Supprimer ce fichier ? Il restera disponible dans la Corbeille.')) return;
     try { await deleteFile(path); await loadFiles(currentPath); }
     catch (err) { console.error('Delete:', err); }
+  };
+  // F4 — sélection multiple : architecture pensée pour accueillir d'autres
+  // actions groupées plus tard (partage, déplacement...), mais seule la
+  // suppression est demandée pour l'instant.
+  const toggleSelect = (path) => {
+    setSelectedPaths(prev => {
+      const next = new Set(prev);
+      next.has(path) ? next.delete(path) : next.add(path);
+      return next;
+    });
+  };
+  const handleExitSelectMode = () => { setSelectMode(false); setSelectedPaths(new Set()); };
+  const handleBulkDelete = async () => {
+    if (selectedPaths.size === 0) return;
+    if (!window.confirm(`Supprimer ${selectedPaths.size} élément(s) ? Ils resteront disponibles dans la Corbeille.`)) return;
+    setBulkDeleting(true);
+    try {
+      for (const path of selectedPaths) {
+        try { await deleteFile(path); } catch (err) { console.error('Bulk delete:', path, err); }
+      }
+      setSelectedPaths(new Set());
+      await loadFiles(currentPath);
+    } finally {
+      setBulkDeleting(false);
+    }
   };
   const handleChangePassword = async () => {
     setPwStatus({ loading:false, error:'', success:'' });
@@ -621,14 +687,36 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <EmptyState T={T} icon={faUsers} title="Espace communautaire" text="Bientôt disponible — cours, logiciels et médias partagés par la communauté apparaîtront ici." />
+            <div style={{ ...card(T, { padding:'20px' }) }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'14px' }}>
+                <div style={{ fontSize:'13px', fontWeight:'600', color:T.textMuted, textTransform:'uppercase', letterSpacing:'.04em' }}>Espace communautaire</div>
+                <span onClick={() => setTab('community')} style={{ fontSize:'12.5px', color:T.accent, fontWeight:'600', cursor:'pointer' }}>Voir tout</span>
+              </div>
+              {communityPreview.length === 0 ? (
+                <EmptyState T={T} icon={faUsers} title="Aucun dépôt pour l'instant" text="Soyez le premier à déposer un cours, un logiciel ou un média." />
+              ) : (
+                <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: isMobile?'10px':'16px' }}>
+                  {communityPreview.map(r => (
+                    <div key={r.id} onClick={() => setTab('community')} style={{ background:T.surfaceAlt, borderRadius:'6px', padding:'14px', cursor:'pointer' }}>
+                      <div style={{ fontSize:'13px', fontWeight:'600', color:T.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.titre}</div>
+                      <div style={{ fontSize:'11.5px', color:T.textMuted, marginTop:'4px' }}>{r.uploader_prenom} {r.uploader_nom?.[0]}. · {r.categorie === 'Media' ? 'Média' : r.categorie}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
         {/* ══ EXPLORER (WebDAV réel) ══ */}
         {tab === 'explorer' && (
           <div>
-            <ScreenHeader title="Mes fichiers" subtitle={`Quota : ${quotaLabel}`} />
+            <ScreenHeader title="Mes fichiers" subtitle={`Votre espace personnel — upload, téléchargement, dossiers · Quota : ${quotaLabel}`} />
+            {currentPath !== '/' && (
+              <button onClick={() => setCurrentPath(currentPath.substring(0, currentPath.lastIndexOf('/')) || '/')} style={{ display:'flex', alignItems:'center', gap:'8px', padding:'8px 14px', background:T.surface, border:'none', borderRadius:'8px', color:T.text, fontSize:'12.5px', fontWeight:'600', cursor:'pointer', fontFamily:'Inter,sans-serif', marginBottom:'12px' }}>
+                <FontAwesomeIcon icon={faArrowLeft} style={{ fontSize:'12px' }} /> Retour
+              </button>
+            )}
             <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:'16px', flexWrap:'wrap', gap:'12px' }}>
               <Breadcrumb />
               <div style={{ display:'flex', gap:'10px', flexWrap:'wrap' }}>
@@ -644,8 +732,20 @@ export default function Dashboard() {
                   <span onClick={() => setExplorerView('list')} style={{ padding:'5px 12px', borderRadius:'6px', fontSize:'12px', fontWeight:'600', cursor:'pointer', background: explorerView==='list' ? T.accentDim : 'transparent', color: explorerView==='list' ? T.accent : T.textMuted }}>Liste</span>
                   <span onClick={() => setExplorerView('grid')} style={{ padding:'5px 12px', borderRadius:'6px', fontSize:'12px', fontWeight:'600', cursor:'pointer', background: explorerView==='grid' ? T.accentDim : 'transparent', color: explorerView==='grid' ? T.accent : T.textMuted }}>Grille</span>
                 </div>
+                <button onClick={() => selectMode ? handleExitSelectMode() : setSelectMode(true)} style={{ display:'flex', alignItems:'center', gap:'7px', padding:'10px 16px', background: selectMode ? T.accentDim : T.surface, border:'none', borderRadius:'8px', color: selectMode ? T.accent : T.text, fontSize:'13px', fontWeight:'600', cursor:'pointer', fontFamily:'Inter,sans-serif' }}>
+                  <FontAwesomeIcon icon={faCheckSquare} style={{ fontSize:'13px' }} /> {selectMode ? 'Annuler' : 'Sélectionner'}
+                </button>
               </div>
             </div>
+
+            {selectMode && (
+              <div style={{ ...card(T, { padding:'12px 16px' }), marginBottom:'16px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:'12px', flexWrap:'wrap' }}>
+                <span style={{ color:T.textMuted, fontSize:'13px' }}>{selectedPaths.size} élément(s) sélectionné(s)</span>
+                <button onClick={handleBulkDelete} disabled={selectedPaths.size === 0 || bulkDeleting} style={{ display:'flex', alignItems:'center', gap:'7px', padding:'8px 14px', background:T.dangerDim, border:'none', borderRadius:'8px', color:T.danger, fontSize:'12.5px', fontWeight:'600', cursor: selectedPaths.size === 0 ? 'default' : 'pointer', opacity: selectedPaths.size === 0 ? 0.5 : 1, fontFamily:'Inter,sans-serif' }}>
+                  <FontAwesomeIcon icon={bulkDeleting ? faSpinner : faTrash} style={{ fontSize:'12px' }} /> {bulkDeleting ? 'Suppression...' : 'Supprimer la sélection'}
+                </button>
+              </div>
+            )}
 
             {uploading && (
               <div style={{ marginBottom:'16px' }}>
@@ -692,7 +792,7 @@ export default function Dashboard() {
                   </div>
                 )}
                 {files.map((file, i) => (
-                  <ExplorerRow key={i} T={T} file={file} onNavigate={handleNavigate} onDownload={handleDownload} onDelete={handleDelete} canDelete={isProf || !/^\/?cours[-_]/i.test(currentPath)} isLast={i === files.length - 1} />
+                  <ExplorerRow key={i} T={T} file={file} onNavigate={handleNavigate} onDownload={handleDownload} onDelete={handleDelete} canDelete={isProf || !/^\/?cours[-_]/i.test(currentPath)} isLast={i === files.length - 1} selectMode={selectMode} selected={selectedPaths.has(file.path)} onToggleSelect={toggleSelect} />
                 ))}
               </div>
             ) : (
@@ -704,7 +804,7 @@ export default function Dashboard() {
                   </div>
                 )}
                 {files.map((file, i) => (
-                  <ExplorerCard key={i} T={T} file={file} onNavigate={handleNavigate} onDownload={handleDownload} onDelete={handleDelete} canDelete={isProf || !/^\/?cours[-_]/i.test(currentPath)} />
+                  <ExplorerCard key={i} T={T} file={file} onNavigate={handleNavigate} onDownload={handleDownload} onDelete={handleDelete} canDelete={isProf || !/^\/?cours[-_]/i.test(currentPath)} selectMode={selectMode} selected={selectedPaths.has(file.path)} onToggleSelect={toggleSelect} />
                 ))}
               </div>
             )}
@@ -714,7 +814,7 @@ export default function Dashboard() {
         {/* ══ COURS PARTAGÉS ══ */}
         {tab === 'courses' && (
           <div>
-            <ScreenHeader title="Cours partagés" subtitle="Bibliothèque par filière" />
+            <ScreenHeader title="Cours partagés" subtitle="Bibliothèque par filière — lecture seule pour les étudiants, dépôt pour profs et assistants" />
             {sharedFolders.length === 0 ? (
               <EmptyState T={T} icon={faBookOpen} title="Aucun cours partagé" text="Les dossiers de cours (Cours-*) apparaîtront ici une fois disponibles." />
             ) : (
@@ -902,7 +1002,7 @@ export default function Dashboard() {
         {/* ══ SETTINGS / PARAMÈTRES ══ */}
         {tab === 'settings' && (
           <div style={{ maxWidth:'600px' }}>
-            <ScreenHeader title="Paramètres" />
+            <ScreenHeader title="Paramètres" subtitle="Profil, thème et mot de passe" />
             <div style={{ ...card(T, { padding:'24px', marginBottom:'16px' }) }}>
               <div style={{ display:'flex', alignItems:'center', gap:'16px', marginBottom:'24px' }}>
                 <div style={{ width:'56px', height:'56px', borderRadius:'50%', flexShrink:0, background:T.surfaceAlt, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'20px', fontWeight:'700', color:T.text }}>{initials}</div>

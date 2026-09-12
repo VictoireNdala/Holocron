@@ -3,7 +3,7 @@ const { logActivity } = require('../utils/activityLog');
 
 const VALID_PERMISSIONS = [
   'verifier_logiciels', 'moderer_communautaire', 'gerer_matricules',
-  'gerer_utilisateurs', 'gerer_dossiers', 'voir_logs'
+  'gerer_utilisateurs', 'gerer_dossiers', 'voir_logs', 'gerer_taxonomie'
 ];
 
 // ── Liste des admins (super + simple) avec leurs permissions ────────────────
@@ -313,5 +313,124 @@ exports.deleteMatricule = async (req, res) => {
   } catch (error) {
     console.error('deleteMatricule:', error.message);
     res.status(500).json({ success: false, message: 'Erreur suppression matricule' });
+  }
+};
+
+// ── Taxonomie Espace communautaire (Axe F6, DECISIONS.md D-2026-09-12-03) ──
+// CRUD sur les 4 référentiels — les valeurs de départ (Sciences
+// Informatiques, L1-L5, Cours/Logiciel/Media/Autre) n'étaient qu'un
+// échantillon, pas une liste figée. Permission dédiée `gerer_taxonomie`.
+exports.createFaculty = async (req, res) => {
+  try {
+    const { nom } = req.body;
+    if (!nom?.trim()) return res.status(400).json({ success: false, message: 'nom requis' });
+    const [r] = await db.execute('INSERT INTO faculties (nom) VALUES (?)', [nom.trim()]);
+    await logActivity(req.user.id, 'creer_faculte', 'faculty', r.insertId, nom.trim());
+    res.status(201).json({ success: true, message: 'Faculté créée', id: r.insertId });
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ success: false, message: 'Cette faculté existe déjà' });
+    console.error('createFaculty:', error.message);
+    res.status(500).json({ success: false, message: 'Erreur création faculté' });
+  }
+};
+
+exports.deleteFaculty = async (req, res) => {
+  try {
+    const { id } = req.params;
+    // ON DELETE SET NULL sur community_resources/community_priority_folders
+    // (voir schéma) : les ressources déjà classées dans cette faculté
+    // repassent simplement en "Général", rien ne casse.
+    await db.execute('DELETE FROM faculties WHERE id = ?', [id]);
+    await logActivity(req.user.id, 'supprimer_faculte', 'faculty', id);
+    res.json({ success: true, message: 'Faculté supprimée' });
+  } catch (error) {
+    console.error('deleteFaculty:', error.message);
+    res.status(500).json({ success: false, message: 'Erreur suppression faculté' });
+  }
+};
+
+exports.createFiliereEntry = async (req, res) => {
+  try {
+    const { faculty_id, nom } = req.body;
+    if (!faculty_id || !nom?.trim()) return res.status(400).json({ success: false, message: 'faculty_id et nom requis' });
+    const [r] = await db.execute('INSERT INTO faculty_filieres (faculty_id, nom) VALUES (?, ?)', [faculty_id, nom.trim()]);
+    await logActivity(req.user.id, 'creer_filiere', 'faculty_filiere', r.insertId, nom.trim());
+    res.status(201).json({ success: true, message: 'Filière créée', id: r.insertId });
+  } catch (error) {
+    console.error('createFiliereEntry:', error.message);
+    res.status(500).json({ success: false, message: 'Erreur création filière' });
+  }
+};
+
+exports.deleteFiliereEntry = async (req, res) => {
+  try {
+    const { id } = req.params;
+    // ON DELETE CASCADE sur community_priority_folders.filiere_id : un
+    // dossier prioritaire basé sur cette filière disparaît avec elle.
+    await db.execute('DELETE FROM faculty_filieres WHERE id = ?', [id]);
+    await logActivity(req.user.id, 'supprimer_filiere', 'faculty_filiere', id);
+    res.json({ success: true, message: 'Filière supprimée' });
+  } catch (error) {
+    console.error('deleteFiliereEntry:', error.message);
+    res.status(500).json({ success: false, message: 'Erreur suppression filière' });
+  }
+};
+
+exports.createLevelEntry = async (req, res) => {
+  try {
+    const { nom, ordre } = req.body;
+    if (!nom?.trim()) return res.status(400).json({ success: false, message: 'nom requis' });
+    const [r] = await db.execute('INSERT INTO levels (nom, ordre) VALUES (?, ?)', [nom.trim(), parseInt(ordre) || 0]);
+    await logActivity(req.user.id, 'creer_niveau', 'level', r.insertId, nom.trim());
+    res.status(201).json({ success: true, message: 'Niveau créé', id: r.insertId });
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ success: false, message: 'Ce niveau existe déjà' });
+    console.error('createLevelEntry:', error.message);
+    res.status(500).json({ success: false, message: 'Erreur création niveau' });
+  }
+};
+
+exports.deleteLevelEntry = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.execute('DELETE FROM levels WHERE id = ?', [id]);
+    await logActivity(req.user.id, 'supprimer_niveau', 'level', id);
+    res.json({ success: true, message: 'Niveau supprimé' });
+  } catch (error) {
+    console.error('deleteLevelEntry:', error.message);
+    res.status(500).json({ success: false, message: 'Erreur suppression niveau' });
+  }
+};
+
+exports.createCategoryEntry = async (req, res) => {
+  try {
+    const { nom, is_logiciel, ordre } = req.body;
+    if (!nom?.trim()) return res.status(400).json({ success: false, message: 'nom requis' });
+    const [r] = await db.execute(
+      'INSERT INTO community_categories (nom, is_logiciel, ordre) VALUES (?, ?, ?)',
+      [nom.trim(), !!is_logiciel, parseInt(ordre) || 0]
+    );
+    await logActivity(req.user.id, 'creer_categorie', 'community_category', r.insertId, nom.trim());
+    res.status(201).json({ success: true, message: 'Catégorie créée', id: r.insertId });
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ success: false, message: 'Cette catégorie existe déjà' });
+    console.error('createCategoryEntry:', error.message);
+    res.status(500).json({ success: false, message: 'Erreur création catégorie' });
+  }
+};
+
+exports.deleteCategoryEntry = async (req, res) => {
+  try {
+    const { id } = req.params;
+    // Pas de FK stricte depuis community_resources.categorie (VARCHAR
+    // simple, voir migration 2026-09-12) : supprimer une catégorie ne casse
+    // jamais les ressources déjà déposées sous ce nom, elle disparaît juste
+    // des choix proposés pour les nouveaux dépôts.
+    await db.execute('DELETE FROM community_categories WHERE id = ?', [id]);
+    await logActivity(req.user.id, 'supprimer_categorie', 'community_category', id);
+    res.json({ success: true, message: 'Catégorie supprimée' });
+  } catch (error) {
+    console.error('deleteCategoryEntry:', error.message);
+    res.status(500).json({ success: false, message: 'Erreur suppression catégorie' });
   }
 };

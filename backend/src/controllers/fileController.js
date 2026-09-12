@@ -54,7 +54,12 @@ const parseWebDAV = (xml, username, currentPath) => {
       isDirectory: /<d:collection\s*\/>/i.test(block),
       size:        parseInt((block.match(/<d:getcontentlength>(.*?)<\/d:getcontentlength>/i)||[])[1]||'0'),
       modified:    (block.match(/<d:getlastmodified>(.*?)<\/d:getlastmodified>/i)||[])[1]||'',
-      mimeType:    (block.match(/<d:getcontenttype>(.*?)<\/d:getcontenttype>/i)||[])[1]||''
+      mimeType:    (block.match(/<d:getcontenttype>(.*?)<\/d:getcontenttype>/i)||[])[1]||'',
+      // F3 : identifiant Nextcloud numérique du fichier, nécessaire pour
+      // demander une prévisualisation via /index.php/core/preview (voir
+      // exports.filePreview plus bas) — l'API de preview ne prend pas de
+      // chemin, seulement un fileId.
+      fileId:      parseInt((block.match(/<oc:fileid>(.*?)<\/oc:fileid>/i)||[])[1]||'0') || null
     });
   }
 
@@ -66,10 +71,10 @@ const parseWebDAV = (xml, username, currentPath) => {
 };
 
 const PROPFIND_BODY = `<?xml version="1.0" encoding="UTF-8"?>
-<d:propfind xmlns:d="DAV:">
+<d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
   <d:prop>
     <d:displayname/><d:getcontentlength/>
-    <d:getcontenttype/><d:getlastmodified/><d:resourcetype/>
+    <d:getcontenttype/><d:getlastmodified/><d:resourcetype/><oc:fileid/>
   </d:prop>
 </d:propfind>`;
 
@@ -165,6 +170,34 @@ exports.downloadFile = async (req, res) => {
   } catch (error) {
     console.error('downloadFile:', error.response?.status, error.message);
     res.status(500).json({ success: false, message: 'Erreur téléchargement' });
+  }
+};
+
+// ── Prévisualisation (F3) ──────────────────────────────────────────────────
+// Proxifie l'API Preview native de Nextcloud (images, vidéos, PDF, Office...
+// selon les providers activés côté serveur) avec les identifiants per-user —
+// jamais un client admin unique, même règle que le reste de ce fichier.
+// L'API de preview de Nextcloud prend un fileId (pas un chemin), d'où
+// oc:fileid ajouté au PROPFIND de listFiles ci-dessus.
+exports.filePreview = async (req, res) => {
+  try {
+    const fileId = parseInt(req.query.fileId);
+    const size    = Math.min(parseInt(req.query.size) || 200, 512);
+    if (!fileId) return res.status(400).json({ success: false, message: 'fileId requis' });
+
+    const response = await userWebdav(req)({
+      method:       'GET',
+      url:          `/index.php/core/preview?fileId=${fileId}&x=${size}&y=${size}&a=1`,
+      responseType: 'stream'
+    });
+
+    res.setHeader('Content-Type', response.headers['content-type'] || 'image/png');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    response.data.pipe(res);
+  } catch (error) {
+    // Pas de préview disponible (provider désactivé côté serveur, type non
+    // supporté...) — 404 pour que le frontend retombe sur l'icône générique.
+    res.status(404).json({ success: false, message: 'Prévisualisation indisponible' });
   }
 };
 

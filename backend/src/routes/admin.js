@@ -29,4 +29,14 @@ router.get('/matricules',              checkPermission('gerer_matricules'), admi
 router.post('/matricules',             checkPermission('gerer_matricules'), adminController.addMatricule);
 router.delete('/matricules/:matricule', checkPermission('gerer_matricules'), adminController.deleteMatricule);
 
+// Taxonomie Espace communautaire (Axe F6) — facultés, filières, niveaux, catégories
+router.post('/faculties',            checkPermission('gerer_taxonomie'), adminController.createFaculty);
+router.delete('/faculties/:id',      checkPermission('gerer_taxonomie'), adminController.deleteFaculty);
+router.post('/faculty-filieres',     checkPermission('gerer_taxonomie'), adminController.createFiliereEntry);
+router.delete('/faculty-filieres/:id', checkPermission('gerer_taxonomie'), adminController.deleteFiliereEntry);
+router.post('/levels',               checkPermission('gerer_taxonomie'), adminController.createLevelEntry);
+router.delete('/levels/:id',         checkPermission('gerer_taxonomie'), adminController.deleteLevelEntry);
+router.post('/categories',           checkPermission('gerer_taxonomie'), adminController.createCategoryEntry);
+router.delete('/categories/:id',     checkPermission('gerer_taxonomie'), adminController.deleteCategoryEntry);
+
 module.exports = router;
