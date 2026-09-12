@@ -112,13 +112,24 @@
   Notifications** (cloche + panneau, 3 évènements : nouveau devoir, rendu
   reçu, dépôt communautaire). Build de production vérifié à chaque étape ;
   **pas encore testé contre le vrai serveur/la vraie base**.
-- **A faire :** **B0 reste en priorité absolue** (rollback `register`, voir
-  DECISIONS.md D-2026-09-12-01 et CONTEXT.md piège #13) — bug actif qui a
-  déjà coûté des heures de diagnostic, toujours pas traité malgré plusieurs
-  sessions de développement depuis sa découverte. Puis déploiement +
-  vérification réelle de l'Axe F et de l'Axe G (voir "Ordre de travail
-  suggéré"). Exécuter la migration `2026-09-12_notifications.sql` sur la
-  base de production (nouvelle table `notifications`, non appliquée).
+- **Fait (2026-09-12, suite 5) :** **B0 corrigé** — rollback automatique
+  du compte MySQL (et du compte Nextcloud si déjà créé) si l'inscription
+  échoue à l'étape Nextcloud (`authController.register`,
+  `config/nextcloud.js` : nouveau `deleteNextcloudUser`). En vérifiant ce
+  chemin, découverte d'un bug directement lié dans `docker-compose.yml` :
+  `NEXTCLOUD_PASSWORD` contenait encore l'ANCIENNE valeur (piège #16)
+  au lieu de `gougoul123` documentée comme correcte depuis le 2026-09-12
+  — corrigé (piège #18), sinon B0 aurait été déclenché à CHAQUE
+  inscription. `JWT_SECRET` régénéré dans `docker-compose.yml` (valeur
+  forte, 2026-09-12). F3 : liste des types prévisualisables élargie
+  (Office/OpenDocument/texte, en plus d'image/vidéo/PDF), plancher de
+  taille ajouté côté backend. Build vérifié (`node --check` + `npx
+  react-scripts build`), **rien de tout ça testé contre le vrai
+  Nextcloud/MySQL de production.**
+- **A faire :** déploiement + vérification réelle de l'Axe B0/F/G (voir
+  "Ordre de travail suggéré" — exécuter les deux migrations en attente
+  avant de redéployer, la rotation JWT_SECRET déconnectera tous les
+  utilisateurs actifs au prochain déploiement).
 - **Attend des autres :** rien de bloquant actuellement côté infra —
   migration disque faite, Team Folder `Communautaire` créé, système
   redéployé et globalement fonctionnel. Les points remontés (Axe F) sont
@@ -186,13 +197,19 @@
 
 ## Axe B — Gestion de fichiers (finitions connues)
 
-- ⬜ **B0. [PRIORITÉ HAUTE] Rollback dans `register` si Nextcloud échoue.**
-  Voir `DECISIONS.md` D-2026-09-12-01 et `CONTEXT.md` piège #13. Découvert
-  lors de la migration disque du 12/09 : des comptes MySQL fantômes
-  (sans compte Nextcloud correspondant) se créent silencieusement en cas
-  d'échec transitoire, causant des heures de diagnostic (401/429 en
-  boucle) avant de comprendre que le compte n'existe simplement pas côté
-  Nextcloud. Corriger avant de refaire une migration ou un incident réseau.
+- ✅ **B0. Rollback dans `register` si Nextcloud échoue.** Voir
+  `DECISIONS.md` D-2026-09-12-01 et `CONTEXT.md` piège #13. **Corrigé le
+  2026-09-12** : les étapes Nextcloud (création du compte + groupes/quota)
+  sont isolées dans leur propre `try/catch` ; en cas d'échec, la ligne
+  `users` fraîchement créée est supprimée automatiquement, ainsi que le
+  compte Nextcloud s'il avait déjà été créé avant l'échec (nouveau
+  `deleteNextcloudUser` dans `config/nextcloud.js`). **Non testé contre un
+  vrai échec Nextcloud** (pas d'accès à l'infra depuis l'environnement de
+  dev) — à valider par Victoire après déploiement. Au passage, découverte
+  et correction d'un bug directement lié : `docker-compose.yml` contenait
+  encore l'ANCIEN mot de passe admin Nextcloud (voir `CONTEXT.md` piège
+  #18) — sans ce correctif, **toute** inscription aurait échoué à l'étape
+  Nextcloud et déclenché ce rollback systématiquement.
 
 - ✅ **B1. Corbeille.** Routes API trashbin natif Nextcloud
   (lister/restaurer/purger un élément/vider) branchées dans un écran
@@ -295,14 +312,20 @@
   dans l'Explorateur (visible dès qu'on n'est pas à la racine), en plus du
   fil d'Ariane existant — conforme à DECISIONS.md D-2026-09-12-02.
 
-- ✅ **F3.** Vraies prévisualisations (images, vidéos, PDF) via l'API
-  Preview native de Nextcloud (`/index.php/core/preview`), proxifiée par
-  une nouvelle route `GET /files/preview?fileId=&size=` avec les
-  identifiants WebDAV per-user. Nécessite `oc:fileid` dans le PROPFIND de
-  `listFiles` (ajouté). Repli silencieux sur l'icône générique si la
-  prévisualisation échoue (404) — **dépend des providers de preview
-  Nextcloud activés côté serveur (PDF/Office/vidéo), pas vérifié/activé,
-  peut ne rien afficher tant que ce n'est pas confirmé côté infra.**
+- ✅ **F3.** Vraies prévisualisations via l'API Preview native de
+  Nextcloud (`/index.php/core/preview`), proxifiée par une route
+  `GET /files/preview?fileId=&size=` avec les identifiants WebDAV
+  per-user. Nécessite `oc:fileid` dans le PROPFIND de `listFiles`
+  (ajouté). Repli silencieux sur l'icône générique si la prévisualisation
+  échoue (404). **Élargi le 2026-09-12** : la liste des types demandés
+  côté frontend couvre désormais image/vidéo/texte/PDF **et**
+  Office/OpenDocument (docx/xlsx/pptx/odt/ods/odp), pas seulement
+  image/vidéo comme avant — sans coût si le provider n'est pas activé
+  (échec silencieux). Plancher de 32px ajouté sur la taille de vignette
+  backend (`fileController.filePreview`). **Dépend toujours des providers
+  de preview Nextcloud activés côté serveur (Office nécessite imagick +
+  LibreOffice ou Collabora/OnlyOffice) — pas vérifié/activé, à faire côté
+  infra par Victoire, pas dans le code.**
 
 - ✅ **F4.** Sélection multiple dans l'Explorateur (bouton "Sélectionner",
   cases à cocher sur chaque élément, barre d'action avec compteur +
@@ -417,18 +440,22 @@
 
 ## Ordre de travail suggéré
 
-1. **B0 reste à faire** — bug critique découvert le 2026-09-12 (comptes
-   fantômes si Nextcloud échoue à l'inscription), **pas encore corrigé**
-   malgré tout le reste de l'Axe F et de l'Axe G traité — à prioriser au
-   prochain passage côté code, avant tout nouveau développement.
-2. **Déploiement + vérification de F1-F8 et G1-G8** : exécuter les deux
+1. **Tout le code est prêt côté Axe B/F/G — reste le déploiement et la
+   vérification réelle.** Avant de redéployer, exécuter les deux
    migrations en attente (`2026-09-12_taxonomie_dynamique.sql` et
-   `2026-09-12_notifications.sql`), remplacer la valeur de `JWT_SECRET`
-   dans `docker-compose.yml` par un secret fort (G3), redéployer, puis
-   confirmer chaque point avec Victoire — en particulier F3 (dépend des
-   providers de preview Nextcloud, pas vérifiés), F5 (bug pas reproduit
-   dans le code actuel, à reconfirmer) et D3/G8 (notifications jamais
-   testées contre le vrai serveur).
+   `2026-09-12_notifications.sql`). `docker-compose.yml` a déjà été mis à
+   jour dans le dépôt (`JWT_SECRET` régénéré, `NEXTCLOUD_PASSWORD`
+   corrigé) — ces valeurs ne prennent effet qu'au rebuild Docker sur le
+   serveur, donc le prochain déploiement déconnectera tous les
+   utilisateurs actifs (rotation JWT) : à faire à un moment de faible
+   usage si possible.
+2. **Après déploiement, confirmer avec Victoire** : B0 (provoquer un
+   échec Nextcloud réel — ex. couper le conteneur puis tenter une
+   inscription — et vérifier qu'aucun compte fantôme ne reste), F3 (dépend
+   des providers de preview Nextcloud, pas vérifiés/activés côté infra),
+   F5 (bug pas reproduit dans le code actuel, à reconfirmer), D3/G8
+   (notifications jamais testées contre le vrai serveur), et le reste de
+   l'Axe G (rate limiting, reset mot de passe admin, etc.).
 3. Puis Axe D restant (D4).
 4. Le reste (axe E, refonte visuelle Aurora/Meridian non retenue,
    supercalculateur) au fil de l'eau, sans bloquer les précédents.

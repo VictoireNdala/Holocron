@@ -34,8 +34,8 @@ services:
       DB_NAME: academic_nas
       NEXTCLOUD_URL: http://192.168.1.4:8080
       NEXTCLOUD_ADMIN: admin
-      NEXTCLOUD_PASSWORD: TheGougoulHolocron8@
-      JWT_SECRET: holocron_secret_2024
+      NEXTCLOUD_PASSWORD: gougoul123
+      JWT_SECRET: BBhjf5OjIFpuvsh+yxjJA5xxVi+QVdd55Sn2xgpMcNycWpOEMn6gPP3P9PFlLgNd
       NC_DATA_DIR: /nextcloud-data
     volumes:
       # Données Nextcloud en LECTURE SEULE — nécessaire au téléchargement prof

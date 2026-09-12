@@ -201,22 +201,21 @@ manuellement ; à surveiller si le compte est recréé de nouveau.
 | MySQL app | `academic_user` | `academic1234` (base `academic_nas`) |
 | MySQL root | `root` | `root1234` |
 | Postgres (Nextcloud) | `nextcloud` | `nextcloud123` |
-| JWT secret | — | `holocron_secret_2024` **(⚠️ à changer, voir note ci-dessous)** |
+| JWT secret | — | valeur forte générée le 2026-09-12 (64 octets aléatoires, base64) — voir `docker-compose.yml`, ne pas dupliquer ici |
 | SSH serveur | `truenas_admin` @ `192.168.1.4` | clé SSH (`~/.ssh/id_ed25519`) |
 
 > ⚠️ Si un identifiant change, mettre à jour cette table immédiatement.
 
-> **⚠️ Action manuelle requise (Axe G3, 2026-09-12) :** le backend refuse
-> désormais de démarrer si `JWT_SECRET` n'est pas défini dans
-> l'environnement (voir `backend/src/config/jwt.js`) — l'ancien fallback
-> silencieux en dur dans le code a été supprimé. `docker-compose.yml`
-> définit toujours `JWT_SECRET: holocron_secret_2024` pour ne pas casser
-> le prochain déploiement, mais cette valeur reste faible et connue de
-> quiconque a accès au dépôt. Victoire doit la remplacer par une valeur
-> forte et unique dans `docker-compose.yml` — attention, changer cette
-> valeur déconnecte immédiatement tous les utilisateurs actifs (jetons JWT
-> existants invalidés), à faire à un moment approprié plutôt qu'en pleine
-> journée d'usage.
+> **Rotation effectuée le 2026-09-12 (Axe G3)** : `JWT_SECRET` dans
+> `docker-compose.yml` est passé de la valeur faible commitée
+> `holocron_secret_2024` à une valeur forte générée aléatoirement. Le
+> backend refuse par ailleurs de démarrer si `JWT_SECRET` est absent de
+> l'environnement (voir `backend/src/config/jwt.js`, plus de fallback
+> silencieux). **⚠️ Cette rotation ne prend effet qu'au prochain
+> déploiement** (rebuild Docker sur le serveur) — jusque-là le serveur en
+> production tourne encore avec l'ancienne valeur. Au déploiement, tous
+> les utilisateurs alors connectés seront déconnectés (jetons existants
+> invalidés) : prévenir si possible / déployer à un moment de faible usage.
 
 ---
 
@@ -297,14 +296,34 @@ Nextcloud/MySQL de production :**
 - Notifications (cloche) — voir section 4 pour le détail, migration
   `2026-09-12_notifications.sql` non encore appliquée en production.
 
+**B0 corrigé le 2026-09-12, PAS testé contre le vrai Nextcloud** (voir
+piège #13) : rollback automatique du compte MySQL (et du compte Nextcloud
+s'il avait déjà été créé) si l'inscription échoue à l'étape Nextcloud.
+`docker-compose.yml` : `JWT_SECRET` régénéré (Axe G3) et
+`NEXTCLOUD_PASSWORD` corrigé (piège #18, était resté sur l'ancienne
+valeur) — **ces deux changements ne prennent effet qu'au prochain
+déploiement**.
+
+**F3 (prévisualisations) ajustée le 2026-09-12** : la liste des types
+prévisualisables côté frontend (`PREVIEWABLE_MIME`/`PREVIEWABLE_EXACT`
+dans `Dashboard.jsx`) couvre désormais aussi PDF, Word/Excel/PowerPoint
+(`.doc`/`.docx`/`.xls`/`.xlsx`/`.ppt`/`.pptx`), OpenDocument
+(`.odt`/`.ods`/`.odp`) et texte brut — pas seulement image/vidéo comme
+avant. Ces types ne s'afficheront réellement que si le provider Nextcloud
+correspondant est activé côté serveur (Office nécessite `imagick` +
+LibreOffice ou Collabora/OnlyOffice — **pas fait, reste à la charge de
+Victoire côté infra**) ; en attendant, l'échec retombe silencieusement sur
+l'icône générique (aucun risque à les inclure par avance). Ajout d'un
+plancher de 32px sur la taille de vignette demandée côté backend
+(`fileController.filePreview`), en plus du plafond 512px déjà présent.
+
 ## 8. Fonctionnalités PAS encore implémentées / correctifs connus (à faire)
 
-Voir le détail et l'ordre dans `ROADMAP.md` (Axe B0 et Axe F, retour d'usage
+Voir le détail et l'ordre dans `ROADMAP.md` (Axe F et Axe G, retour d'usage
 du 2026-09-12). Liste de référence :
-- **[Priorité haute] B0 — Rollback dans `register` si Nextcloud échoue.**
-  Bug d'architecture actif : des comptes MySQL fantômes se créent en
-  silence si la création Nextcloud échoue après l'insertion MySQL — voir
-  piège #13 ci-dessous et DECISIONS.md D-2026-09-12-01.
+- ~~B0 — Rollback dans `register` si Nextcloud échoue~~ **Corrigé le
+  2026-09-12**, voir piège #13 et section 7 ci-dessus — reste à valider
+  contre un vrai échec Nextcloud après déploiement.
 - Axe F (8 points remontés après le premier usage réel du 2026-09-12) :
   texte "Bientôt disponible" resté figé sur le Dashboard, navigation
   Explorateur (fil d'Ariane + bouton retour), vraies prévisualisations de
@@ -370,11 +389,13 @@ le 2026-09-12 :**
   pour le détail priorisé) : toute version mobile dédiée d'Espace
   communautaire/Panel Admin/Connexion (étape 1 seule) — reste responsive
   mais pas recomposé selon des maquettes mobile spécifiques ;
-  pixel-fidélité complète de Cours partagés/Paramètres ; vraies
-  prévisualisations de fichiers dans l'Explorateur (Axe F3) ; taxonomie
-  communautaire dynamique (Axe F6) ; onglet "Espace communautaire" dédié du
-  Panel Admin (table de modération séparée, jugée redondante avec la
-  modération déjà présente dans `CommunitySpace`).
+  pixel-fidélité complète de Cours partagés/Paramètres ; onglet "Espace
+  communautaire" dédié du Panel Admin (table de modération séparée, jugée
+  redondante avec la modération déjà présente dans `CommunitySpace`).
+  *(Note : prévisualisations Explorateur (F3) et taxonomie dynamique (F6),
+  listées ⬜ ici par erreur de mise à jour, sont en réalité ✅ depuis le
+  2026-09-12 — voir section 4 et `ROADMAP.md`. Paragraphe resté périmé
+  après leur implémentation ; corrigé dans cette même session.)*
 
 ---
 
@@ -412,14 +433,22 @@ le 2026-09-12 :**
     panne disque de juillet 2026.
 12. Fichiers créés en root via Shell → toujours
     `chown -R truenas_admin:truenas_admin` avant tout transfert SFTP.
-13. **`register` (création de compte) n'a PAS de rollback** si la création
-    du compte Nextcloud échoue après l'insertion MySQL. Résultat : un
-    utilisateur "existe" en base (`users`) mais pas côté Nextcloud —
-    connexion possible mais toute opération fichier échoue en boucle
-    (401 puis 429 bruteforce). **Bug d'architecture non corrigé** — voir
-    `ROADMAP.md` Axe B0, à corriger en priorité (transaction ou vérification
-    + suppression automatique en cas d'échec Nextcloud). En attendant, un
-    compte fantôme se nettoie à la main :
+13. **`register` (création de compte) n'avait PAS de rollback** si la
+    création du compte Nextcloud échouait après l'insertion MySQL. **Corrigé
+    le 2026-09-12** (Axe B0) : les étapes 7-8 (`createNextcloudUser` +
+    groupes/quota) sont désormais isolées dans leur propre bloc
+    `try/catch` dans `authController.register` — en cas d'échec, la ligne
+    `users` fraîchement insérée est supprimée automatiquement
+    (`DELETE FROM users WHERE id = ?`), et si le compte Nextcloud avait
+    déjà été créé avant l'échec (groupe/quota en erreur), il est aussi
+    supprimé (`deleteNextcloudUser`, nouveau dans `config/nextcloud.js`)
+    pour ne pas bloquer une nouvelle tentative d'inscription sur le même
+    matricule. **Non testé contre un vrai Nextcloud** (pas d'accès à
+    l'infra depuis l'environnement de développement) — à valider par
+    Victoire en provoquant un échec réel (ex. couper Nextcloud puis
+    tenter une inscription) avant de considérer ce piège définitivement
+    clos. Si un compte fantôme existait déjà AVANT ce correctif, le
+    nettoyer encore à la main :
     ```sql
     DELETE FROM community_resources WHERE uploader_id=(SELECT id FROM users WHERE matricule='X');
     DELETE FROM users WHERE matricule='X';
@@ -465,6 +494,20 @@ le 2026-09-12 :**
     un préfixe plus spécifique (`/api/community` par exemple, au lieu de
     `/api`). **Corrigé le 2026-09-12** — `/api/health` déplacé avant tous
     les `app.use('/api/...')` dans `index.js`.
+18. **`docker-compose.yml` contenait encore l'ANCIEN mot de passe admin
+    Nextcloud** (`NEXTCLOUD_PASSWORD: TheGougoulHolocron8@`) alors que le
+    vrai mot de passe actuel, vérifié en CLI et documenté section 5 depuis
+    le 2026-09-12, est `gougoul123` (piège #16). Conséquence potentielle
+    si non corrigé : le client OCS admin du backend (`config/nextcloud.js`,
+    utilisé par `register`, la gestion des quotas/groupes, et la
+    réinitialisation de mot de passe admin) s'authentifie avec le mauvais
+    mot de passe — **toutes** les créations de compte échoueraient à
+    l'étape Nextcloud (déclenchant systématiquement le rollback B0 ci-
+    dessus, piège #13), pas seulement lors d'un incident ponctuel.
+    **Corrigé le 2026-09-12** (même session que B0) — `docker-compose.yml`
+    aligné sur la valeur documentée. Leçon : une valeur "corrigée" dans
+    `CONTEXT.md` doit aussi être vérifiée dans tous les fichiers de config
+    qui la dupliquent, pas seulement mise à jour dans la documentation.
 
 ---
 

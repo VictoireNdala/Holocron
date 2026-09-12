@@ -1,7 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt    = require('jsonwebtoken');
 const db     = require('../config/db');
-const { createNextcloudUser, addUserToGroup, setUserQuota, setUserPassword } = require('../config/nextcloud');
+const { createNextcloudUser, deleteNextcloudUser, addUserToGroup, setUserQuota, setUserPassword } = require('../config/nextcloud');
 const JWT_SECRET = require('../config/jwt');
 
 // Quotas par rôle (état 12 juillet : étudiant 2 GB, prof 10 GB, assistant 5 GB)
@@ -73,7 +73,7 @@ exports.register = async (req, res) => {
     // 6. Créer le compte MySQL — on stocke AUSSI le mot de passe en clair dans
     //    nc_password : indispensable pour le WebDAV per-user (Nextcloud 33 bloque
     //    l'écriture cross-user par l'admin). Voir fileController.userWebdav().
-    await db.execute(
+    const [insertResult] = await db.execute(
       `INSERT INTO users
         (matricule, nom, prenom, email, password, nc_password, role, filiere, nextcloud_username)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -82,26 +82,55 @@ exports.register = async (req, res) => {
         hashedPassword, password, role, matriculeData.filiere, nextcloudUsername
       ]
     );
+    const newUserId = insertResult.insertId;
 
-    // 7. Créer le compte Nextcloud
-    await createNextcloudUser(
-      nextcloudUsername, password, email,
-      `${matriculeData.prenom} ${matriculeData.nom}`
-    );
+    // 7-8. Compte Nextcloud + groupes/quota — isolés dans leur propre bloc
+    // pour permettre un rollback ciblé (B0, CONTEXT.md piège #13) : si l'une
+    // de ces étapes échoue, on ne doit JAMAIS laisser le compte MySQL créé
+    // au step 6 sans compte Nextcloud correspondant (sinon connexion
+    // possible mais toute opération fichier échoue en 401/429 en boucle).
+    let nextcloudAccountCreated = false;
+    try {
+      await createNextcloudUser(
+        nextcloudUsername, password, email,
+        `${matriculeData.prenom} ${matriculeData.nom}`
+      );
+      nextcloudAccountCreated = true;
 
-    // 8. Groupes + quota selon le rôle
-    if (role === 'etudiant') {
-      await addUserToGroup(nextcloudUsername, 'Etudiants');
-      if (matriculeData.filiere) {
-        await addUserToGroup(nextcloudUsername, matriculeData.filiere);
+      if (role === 'etudiant') {
+        await addUserToGroup(nextcloudUsername, 'Etudiants');
+        if (matriculeData.filiere) {
+          await addUserToGroup(nextcloudUsername, matriculeData.filiere);
+        }
+        await setUserQuota(nextcloudUsername, QUOTA.etudiant);
+      } else if (role === 'professeur') {
+        await addUserToGroup(nextcloudUsername, 'Professeurs');
+        await setUserQuota(nextcloudUsername, QUOTA.professeur);
+      } else if (role === 'assistant') {
+        await addUserToGroup(nextcloudUsername, 'Assistants');
+        await setUserQuota(nextcloudUsername, QUOTA.assistant);
       }
-      await setUserQuota(nextcloudUsername, QUOTA.etudiant);
-    } else if (role === 'professeur') {
-      await addUserToGroup(nextcloudUsername, 'Professeurs');
-      await setUserQuota(nextcloudUsername, QUOTA.professeur);
-    } else if (role === 'assistant') {
-      await addUserToGroup(nextcloudUsername, 'Assistants');
-      await setUserQuota(nextcloudUsername, QUOTA.assistant);
+    } catch (nextcloudError) {
+      console.error('register: échec Nextcloud, rollback du compte MySQL:', nextcloudError.message);
+
+      await db.execute('DELETE FROM users WHERE id = ?', [newUserId]);
+
+      // Le compte Nextcloud a pu être créé avant l'échec (groupe/quota en
+      // erreur) — le supprimer aussi, sinon une nouvelle tentative
+      // d'inscription sur ce matricule échouera (username déjà pris côté
+      // Nextcloud) avec un compte mal configuré (sans groupe/quota).
+      if (nextcloudAccountCreated) {
+        try {
+          await deleteNextcloudUser(nextcloudUsername);
+        } catch (cleanupError) {
+          console.error('register: échec nettoyage compte Nextcloud orphelin:', cleanupError.message);
+        }
+      }
+
+      return res.status(500).json({
+        success: false,
+        message: 'Erreur lors de la création du compte (service de stockage indisponible) — réessayez dans quelques instants.'
+      });
     }
 
     res.status(201).json({ success: true, message: 'Compte créé avec succès' });

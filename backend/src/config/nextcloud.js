@@ -56,6 +56,14 @@ const setUserQuota = async (username, quota) => {
   }
 };
 
+// Supprimer un compte utilisateur Nextcloud (rollback register, B0) — best
+// effort : n'importe pas si le compte n'existe pas déjà (ex. l'appelant
+// avait déjà échoué avant la création), l'appelant ignore cette erreur.
+const deleteNextcloudUser = async (username) => {
+  const response = await nextcloudClient.delete(`/ocs/v1.php/cloud/users/${username}`);
+  return response.data;
+};
+
 // Changer le mot de passe Nextcloud d'un utilisateur (OCS, client admin)
 const setUserPassword = async (username, password) => {
   try {
@@ -72,6 +80,7 @@ const setUserPassword = async (username, password) => {
 module.exports = {
   nextcloudClient,
   createNextcloudUser,
+  deleteNextcloudUser,
   addUserToGroup,
   setUserQuota,
   setUserPassword

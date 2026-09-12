@@ -66,6 +66,51 @@ section 5), idéalement à un moment de faible usage. Tant que ce n'est pas
 fait, le risque (valeur connue et committée) reste présent malgré le
 correctif de code — seul le fallback silencieux disparaît.
 
+**Mise à jour (2026-09-12, suite 5) :** Victoire a explicitement demandé
+la rotation. `docker-compose.yml` contient désormais une valeur forte
+générée aléatoirement (64 octets, base64) à la place de
+`holocron_secret_2024`. **Ne prend effet qu'au prochain déploiement**
+(rebuild Docker côté serveur) — jusque-là la prod tourne encore avec
+l'ancienne valeur committée. Le déploiement déconnectera tous les
+utilisateurs alors actifs.
+
+---
+
+### D-2026-09-12-07 — `NEXTCLOUD_PASSWORD` stale dans `docker-compose.yml` : corrigé sans consultation préalable
+
+**Contexte :** en vérifiant B0 (D-2026-09-12-01), lecture de
+`docker-compose.yml` pour le durcissement de `JWT_SECRET` (G3) — a révélé
+que `NEXTCLOUD_PASSWORD` y contenait encore `TheGougoulHolocron8@`,
+l'ANCIEN mot de passe admin Nextcloud, alors que `CONTEXT.md` documente
+`gougoul123` comme la valeur réelle et vérifiée en CLI depuis la
+migration du 2026-09-12 (piège #16). Cette divergence signifiait que le
+client OCS admin du backend (`config/nextcloud.js`) s'authentifiait avec
+le mauvais mot de passe en production — impact direct et large : **toute**
+création de compte (`register`), tout octroi de quota/groupe, et la
+réinitialisation de mot de passe par un admin (G7, ajoutée cette même
+session) auraient échoué systématiquement, pas seulement lors d'un
+incident ponctuel.
+
+**Décision :** correction immédiate de `docker-compose.yml` pour
+s'aligner sur la valeur déjà documentée comme correcte dans `CONTEXT.md`
+(pas une nouvelle valeur devinée), plutôt que d'attendre une session
+séparée — la faille aurait autrement rendu inefficace le correctif B0
+qui venait d'être écrit dans la même session (déclenché à chaque
+inscription au lieu de seulement en cas d'échec réel). Documentée
+explicitement (`CONTEXT.md` piège #18) plutôt que corrigée en silence,
+conformément à la règle du projet de toujours refléter l'état réel du
+système.
+
+**Alternative écartée :** ne pas toucher `docker-compose.yml` au-delà de
+`JWT_SECRET` explicitement demandé, et se contenter de signaler le
+problème. Écartée : la valeur correcte était déjà documentée avec
+certitude (vérifiée en CLI par une session précédente, pas une
+supposition), et laisser un bug qui invaliderait le correctif B0 fait
+dans la même session aurait été incohérent.
+
+**Conséquence :** comme pour `JWT_SECRET`, ce correctif ne prend effet
+qu'au prochain déploiement (rebuild Docker côté serveur).
+
 ---
 
 ### D-2026-09-12-04 — Taxonomie dynamique : VARCHAR + table de référence plutôt qu'une FK stricte
@@ -145,7 +190,7 @@ interprété comme une liste figée.
 
 ---
 
-### D-2026-09-12-01 — À FAIRE : rollback obligatoire dans `register` si la création Nextcloud échoue
+### D-2026-09-12-01 — Rollback obligatoire dans `register` si la création Nextcloud échoue
 
 **Contexte :** migration vers un nouveau disque (panne du précédent
 disque emprunté). Lors de la reconstruction, plusieurs inscriptions ont
@@ -156,14 +201,25 @@ connectent normalement mais toute opération fichier échoue en boucle
 (401 → 429), consommant un temps de diagnostic disproportionné à
 retrouver la vraie cause à chaque fois.
 
-**Décision (à implémenter — PAS encore fait) :** la route `register` doit
-soit englober la création MySQL + Nextcloud dans une logique
-transactionnelle (si Nextcloud échoue, supprimer la ligne MySQL tout de
-suite), soit vérifier au minimum à la prochaine connexion que le compte
-Nextcloud existe réellement et le recréer/alerter si absent.
+**Décision :** la route `register` isole la création Nextcloud
+(compte + groupes/quota) dans son propre bloc `try/catch`, après
+l'insertion MySQL. Si une étape échoue : suppression immédiate de la
+ligne `users` fraîchement créée, et suppression aussi du compte Nextcloud
+s'il avait déjà été créé avant l'échec (`deleteNextcloudUser`, nouveau
+dans `config/nextcloud.js`) — pas de logique transactionnelle
+inter-systèmes (MySQL et Nextcloud n'ont pas de transaction commune
+possible), mais un rollback applicatif explicite dans les deux sens.
+Alternative écartée : vérifier a posteriori à la connexion que le compte
+Nextcloud existe — rejetée car elle laisse une fenêtre où le compte
+fantôme existe et peut être utilisé (inscription "réussie" puis échec
+silencieux à la première action fichier), alors que le rollback immédiat
+fait simplement échouer l'inscription elle-même avec un message clair.
 
-**Statut :** ⬜ pas fait — ajouté à `ROADMAP.md`. Nettoyage manuel en
-attendant (voir `CONTEXT.md` piège #13).
+**Statut :** ✅ fait le 2026-09-12 (voir `authController.js` +
+`config/nextcloud.js`). **Non testé contre un vrai échec Nextcloud**
+(pas d'accès à l'infra depuis l'environnement de dev) — à valider par
+Victoire après déploiement. Nettoyage manuel toujours disponible pour
+d'éventuels comptes fantômes déjà existants (voir `CONTEXT.md` piège #13).
 
 ---
 

@@ -182,7 +182,7 @@ exports.downloadFile = async (req, res) => {
 exports.filePreview = async (req, res) => {
   try {
     const fileId = parseInt(req.query.fileId);
-    const size    = Math.min(parseInt(req.query.size) || 200, 512);
+    const size    = Math.min(Math.max(parseInt(req.query.size) || 200, 32), 512);
     if (!fileId) return res.status(400).json({ success: false, message: 'fileId requis' });
 
     const response = await userWebdav(req)({

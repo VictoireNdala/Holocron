@@ -55,15 +55,32 @@ const getFileIcon = (file) => {
   if (m.includes('text'))  return faFile;
   return faFile;
 };
-// F3 — vraie vignette (image/vidéo/PDF) via l'API Preview Nextcloud
-// proxifiée par le backend, repli silencieux sur l'icône générique si la
-// prévisualisation échoue (provider désactivé côté serveur, type non
-// supporté, fileId absent...).
-const PREVIEWABLE_MIME = /^(image|video)\//;
+// F3 — vraie vignette via l'API Preview Nextcloud proxifiée par le backend,
+// repli silencieux sur l'icône générique si la prévisualisation échoue
+// (provider désactivé côté serveur, type non supporté, fileId absent...).
+// La liste couvre aussi les types Office/OpenDocument : Nextcloud ne les
+// prévisualise que si le provider correspondant est activé côté serveur
+// (imagick + LibreOffice, ou Collabora/OnlyOffice) — pas encore confirmé/
+// activé à ce jour (voir CONTEXT.md). Les inclure ici ne coûte rien tant
+// que ce n'est pas fait (l'échec retombe silencieusement sur l'icône) et
+// évite un futur redéploiement le jour où le provider est activé côté infra.
+const PREVIEWABLE_MIME = /^(image|video|text)\//;
+const PREVIEWABLE_EXACT = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.ms-excel',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',       // .xlsx
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/vnd.oasis.opendocument.presentation'
+]);
 function FilePreview({ T, file, previewSize = 160, iconSize = 16 }) {
   const [url, setUrl] = useState(null);
   const [failed, setFailed] = useState(false);
-  const canPreview = !!file.fileId && (PREVIEWABLE_MIME.test(file.mimeType || '') || file.mimeType === 'application/pdf');
+  const canPreview = !!file.fileId && (PREVIEWABLE_MIME.test(file.mimeType || '') || PREVIEWABLE_EXACT.has(file.mimeType));
 
   useEffect(() => {
     if (!canPreview) return;

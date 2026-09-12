@@ -7,6 +7,74 @@
 
 ---
 
+## 2026-09-12 (suite 5) — B0 corrigé + bug lié découvert (mot de passe Nextcloud stale) + F3 élargi
+
+**Contexte :** Victoire demande explicitement de traiter les 4 derniers
+points en attente : corriger B0 (seul point non fait), régénérer
+`JWT_SECRET` en production, vérifier/adapter le code F3 pour les
+providers de preview, puis commit + push.
+
+**Ce qui a été fait :**
+- **B0 corrigé** : dans `authController.register`, les étapes Nextcloud
+  (création du compte + groupes/quota) sont isolées dans leur propre
+  `try/catch`. En cas d'échec : suppression automatique de la ligne
+  `users` fraîchement insérée (`DELETE FROM users WHERE id = ?`), et si
+  le compte Nextcloud avait déjà été créé avant l'échec (groupe/quota en
+  erreur), suppression aussi de ce compte (nouveau `deleteNextcloudUser`
+  dans `config/nextcloud.js`, `DELETE /ocs/v1.php/cloud/users/{username}`)
+  — pour ne pas bloquer une nouvelle tentative d'inscription sur le même
+  matricule avec un compte Nextcloud mal configuré qui traînerait.
+- **Bug lié découvert en vérifiant ce chemin** : `docker-compose.yml`
+  contenait encore `NEXTCLOUD_PASSWORD: TheGougoulHolocron8@` — l'ANCIEN
+  mot de passe admin Nextcloud (piège #16), alors que `CONTEXT.md`
+  documente `gougoul123` comme la valeur réelle et vérifiée depuis la
+  migration du 2026-09-12. Sans correction, le client OCS admin du
+  backend se serait authentifié avec le mauvais mot de passe et **toute**
+  inscription aurait échoué à l'étape Nextcloud, déclenchant le rollback
+  B0 systématiquement plutôt que seulement en cas d'incident réel.
+  Corrigé (nouveau piège #18 dans `CONTEXT.md`, avec la leçon : une valeur
+  "corrigée" dans la doc doit aussi être vérifiée dans les fichiers de
+  config qui la dupliquent).
+- **`JWT_SECRET` régénéré** dans `docker-compose.yml` : remplacé par 64
+  octets aléatoires (base64) générés via `crypto.randomBytes`, à la place
+  de `holocron_secret_2024`. Ce changement, comme celui du mot de passe
+  Nextcloud, ne prend effet qu'au prochain déploiement (rebuild Docker
+  côté serveur) — jusque-là la prod tourne encore avec les anciennes
+  valeurs. La rotation JWT déconnectera tous les utilisateurs actifs au
+  moment du déploiement.
+- **F3 élargi** : liste des types prévisualisables côté frontend
+  (`PREVIEWABLE_MIME`/`PREVIEWABLE_EXACT` dans `Dashboard.jsx`) étendue
+  au-delà d'image/vidéo/PDF pour couvrir aussi Word/Excel/PowerPoint,
+  OpenDocument et texte brut — sans risque même si les providers
+  correspondants ne sont pas encore activés côté serveur (échec silencieux
+  déjà géré). Plancher de 32px ajouté sur la taille de vignette demandée
+  côté backend (`fileController.filePreview`), en plus du plafond 512px
+  déjà présent. L'activation réelle des providers Office/vidéo/PDF côté
+  Nextcloud reste une tâche infra pour Victoire, hors du code.
+- Corrigé au passage un paragraphe périmé de `CONTEXT.md` section 9 qui
+  listait encore F3/F6 comme non construits alors qu'ils sont ✅ depuis la
+  session précédente (F6) et celle-ci (F3) — resté non mis à jour après
+  leur implémentation.
+- Build de production revérifié (`npx react-scripts build`, compile sans
+  erreur), `node --check` OK sur tout le backend modifié (`authController.js`,
+  `config/nextcloud.js`, `fileController.js`).
+- **Commit + push sur GitHub** effectués (voir dernier commit).
+
+**Ce qui reste en suspens :**
+- **Rien de cette session n'a été testé contre le vrai Nextcloud/MySQL de
+  production** — en particulier B0 n'a jamais été déclenché par un vrai
+  échec Nextcloud (pas d'accès à l'infra depuis l'environnement de dev).
+  À valider par Victoire après déploiement, idéalement en provoquant un
+  échec réel (couper Nextcloud, tenter une inscription, vérifier qu'aucun
+  compte fantôme ne reste ni côté MySQL ni côté Nextcloud).
+- Les deux migrations SQL en attente
+  (`2026-09-12_taxonomie_dynamique.sql`, `2026-09-12_notifications.sql`)
+  toujours pas exécutées en production.
+- Providers de preview Nextcloud (Office notamment) toujours pas
+  vérifiés/activés côté serveur.
+
+---
+
 ## 2026-09-12 (suite 4) — Axe G : audit sécurité/fiabilité + recommandations codées
 
 **Contexte :** Victoire demande une recherche libre ("que peux-tu améliorer
