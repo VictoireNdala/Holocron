@@ -14,13 +14,10 @@
 ## 1. Qu'est-ce que Holocron
 
 > **Nom du produit :** le produit s'appelle désormais **Holocron** (renommé
-> depuis "Gougoul Holocron" le 2026-09-04). Quelques identifiants
-> **techniques** créés avant ce renommage contiennent encore l'ancien nom
-> et ne doivent PAS être renommés dans le code sans effectuer le changement
-> réel correspondant côté serveur/GitHub : le mot de passe admin Nextcloud
-> `TheGougoulHolocron8@` (section 5) et le dépôt GitHub
-> `VictoireNdala/gougoul-holocron` (section 11). Renommer ces chaînes dans
-> les fichiers sans changer la vraie ressource casserait la connexion.
+> depuis "Gougoul Holocron" le 2026-09-04). Le dépôt GitHub
+> (`VictoireNdala/gougoul-holocron`, section 11) contient encore l'ancien
+> nom dans son slug — ne PAS le renommer sans effectuer le changement réel
+> côté GitHub, cela casserait le remote Git configuré partout.
 
 Un cloud privé académique de campus : plateforme de partage de ressources
 (fichiers, cours, devoirs) fonctionnant **entièrement sur le réseau local**,
@@ -77,7 +74,7 @@ COUCHE 4 — Backend Node.js / Express (port 5000)
         │  OCS + WebDAV
         ▼
 COUCHE 3 — Nextcloud 33 (port 8080)
-  Moteur de stockage invisible, Team Folders (cours partagés)
+  Moteur de stockage invisible, Team Folders (cours partagés + communautaire)
   + PostgreSQL + Redis
         │
         ▼
@@ -86,7 +83,8 @@ COUCHE 2 — TrueNAS SCALE + ZFS
         │
         ▼
 COUCHE 1 — Matériel reconditionné
-  Dell OptiPlex 9020, i5-4670, 8 Go RAM, disques SATA
+  Dell OptiPlex 9020, i5-4670, 8 Go RAM, disques SATA (~465 Go depuis la
+  migration du 2026-09-11/12, toujours 1 seul disque, pas de redondance)
 ```
 
 **Deux stacks Docker Compose distinctes :**
@@ -103,45 +101,52 @@ réseau local du campus uniquement.
 | Table | Rôle |
 |---|---|
 | `matricules` | Liste blanche des matricules autorisés à s'inscrire (matricule, nom, prenom, role, filiere) |
-| `users` | Comptes inscrits (+ `nc_password` en clair, requis pour le WebDAV per-user) |
+| `users` | Comptes inscrits (+ `nc_password` en clair, requis pour le WebDAV per-user ; + `is_admin`/`admin_level`, voir Panel Admin ci-dessous) |
 | `sessions` | Jetons JWT actifs |
 | `assignments` | Devoirs créés par profs/assistants |
 | `submissions` | Rendus déposés par les étudiants |
 
 Filières valides (chaînes exactes utilisées partout — DB, groupes Nextcloud,
 frontend) : `Genie Logiciel`, `Intelligence Artificielle`,
-`Systemes Informatiques`.
+`Systemes Informatiques`. **À généraliser** : voir `ROADMAP.md` Axe F6 —
+ces valeurs (et les facultés/niveaux/catégories communautaires ci-dessous)
+ne sont qu'un échantillon de départ, pas une liste figée à long terme.
 
 Rôles valides : `etudiant`, `professeur`, `assistant`. Quotas par rôle :
 étudiant 2 Go, professeur 10 Go, assistant 5 Go.
 
-**Espace communautaire** (conception validée le 2026-09-04, **backend codé
-le 2026-09-04** — voir `ROADMAP.md` D1.7, pas encore déployé/testé, Team
-Folder Nextcloud pas encore créé manuellement) — tables supplémentaires :
+**Espace communautaire** (conception validée le 2026-09-04, **implémenté et
+testé en conditions réelles le 2026-09-12** — dépôt avec image de
+couverture, fiche détail, téléchargement, compteur — voir `JOURNAL.md`) —
+tables supplémentaires :
 
 | Table | Rôle |
 |---|---|
-| `faculties` | Liste des facultés (id, nom) — extensible par l'admin |
-| `levels` | Niveaux (id, nom, ordre) — L1 à L5, reutilisables entre facultés |
+| `faculties` | Liste des facultés (id, nom) — extensible par l'admin (CRUD complet prévu, Axe F6) |
+| `levels` | Niveaux (id, nom, ordre) — L1 à L5 au départ, reutilisables entre facultés (encore en dur côté frontend, Axe F6) |
 | `community_resources` | id, titre, description, categorie (Cours/Logiciel/Media/Autre), faculty_id (nullable = "Général/toutes facultés"), level_id (nullable = "Tous niveaux"), cover_image_path (upload manuel, facultatif), fichier_path, fichier_nom, taille, uploader_id, downloads_count, verification_status (non_concerne/non_verifie/verifie/dangereux), verified_by, verified_at, status (visible/masque), created_at |
-| `community_reports` | id, resource_id, reporter_id, raison, created_at — signalements (`POST .../report`), pas dans la conception d'origine, ajoutée pour implémenter l'endpoint déjà spécifié |
+| `community_reports` | id, resource_id, reporter_id, raison, created_at — signalements (`POST .../report`) |
 
 Classification par **3 facettes combinables** (Faculté / Niveau / Catégorie),
 pas de dossiers imbriqués — voir DECISIONS.md D-2026-09-04-01. Quota de
 l'espace communautaire **séparé** des quotas personnels des utilisateurs —
 satisfait naturellement par le choix de stockage (Team Folder Nextcloud, pas
 l'espace personnel de l'utilisateur), aucun code de quota dédié nécessaire.
-Stockage physique : Team Folder Nextcloud dédié `Communautaire`, écriture
-ouverte à tous les rôles, sous-dossiers par catégorie
-(`/Communautaire/{Cours|Logiciels|Medias|Autre}/{resource_id}_{nom}`,
-+ `/Communautaire/_covers/` pour les images de couverture) — sous-dossiers
-créés automatiquement par le backend au premier dépôt, mais le Team Folder
-racine `Communautaire` doit être créé manuellement côté serveur (comme les
-`Cours-*` à l'origine) avant tout test réel.
+Stockage physique : Team Folder Nextcloud dédié `Communautaire` (**créé
+côté serveur le 2026-09-12**, lors de la redéploiement Nextcloud complet —
+voir section 6), écriture ouverte à tous les rôles, sous-dossiers par
+catégorie (`/Communautaire/{Cours|Logiciels|Medias|Autre}/{resource_id}_{nom}`,
++ `/Communautaire/_covers/` pour les images de couverture), créés
+automatiquement par le backend au premier dépôt (MKCOL défensif).
 
-**Panel Admin avancé** (conception validée le 2026-09-04, **backend codé le
-2026-09-04** — voir `ROADMAP.md` D2.3/D2.4, pas encore déployé/testé) —
-tables supplémentaires :
+**Bug connu (Axe F7) :** un dossier prioritaire créé dans le Panel Admin
+n'apparaît actuellement pas dans le catalogue — le câblage catalogue ↔
+`community_priority_folders` (table ci-dessous) est à vérifier/corriger.
+
+**Panel Admin avancé + base** (conception validée le 2026-09-04,
+**implémenté et accessible le 2026-09-12** — 5 onglets confirmés
+fonctionnels visuellement : Utilisateurs, Matricules, Administrateurs,
+Dossiers prioritaires, Journaux d'activité) — tables supplémentaires :
 
 | Table | Rôle |
 |---|---|
@@ -158,11 +163,17 @@ reçoit des permissions individuelles parmi : `verifier_logiciels`,
 `ROADMAP.md` axe D2 pour les endpoints. Attribuer/retirer les droits admin
 eux-mêmes (`POST /admin/admins/:userId/grant`, `DELETE .../:userId`) est
 **réservé aux super admins** (vérifié dans `adminController.js`, pas
-délégable via `admin_permissions` — jugé trop sensible). Migration SQL pour
-appliquer ce schéma sur la base déjà déployée :
-`database/migrations/2026-09-04_communautaire_et_panel_admin.sql` (à
-exécuter manuellement — `init.sql` ne se rejoue jamais sur une base déjà
-initialisée). Victoire (`ETU-20244936`) y est promue super admin.
+délégable via `admin_permissions` — jugé trop sensible).
+
+**Migration SQL** pour appliquer ce schéma sur une base déjà déployée sans
+le rejouer via `init.sql` (qui ne s'exécute qu'au tout premier démarrage
+MySQL) : `database/migrations/2026-09-04_communautaire_et_panel_admin.sql`
+— déjà appliquée en production (base recréée lors de la migration disque du
+2026-09-12, `init.sql` à jour inclut désormais ce schéma nativement).
+Victoire (`ETU-20244936`) est promue super admin — **attention** : son
+compte a perdu ce statut une fois pendant la migration (compte MySQL
+recréé, reparti sur les valeurs par défaut) et a dû être repromu
+manuellement ; à surveiller si le compte est recréé de nouveau.
 
 ---
 
@@ -170,7 +181,7 @@ initialisée). Victoire (`ETU-20244936`) y est promue super admin.
 
 | Service | Identifiant | Mot de passe / valeur |
 |---|---|---|
-| Nextcloud admin | `admin` | `TheGougoulHolocron8@` |
+| Nextcloud admin | `admin` | `gougoul123` *(corrigé le 2026-09-12 — l'ancien `TheGougoulHolocron8@` ne correspondait plus après la migration disque ; voir CONTEXT.md piège #16 pour toujours vérifier en CLI plutôt que de supposer)* |
 | MySQL app | `academic_user` | `academic1234` (base `academic_nas`) |
 | MySQL root | `root` | `root1234` |
 | Postgres (Nextcloud) | `nextcloud` | `nextcloud123` |
@@ -183,18 +194,25 @@ initialisée). Victoire (`ETU-20244936`) y est promue super admin.
 
 ## 6. Groupes et Team Folders Nextcloud
 
-Groupes créés : `Etudiants`, `Professeurs`, `Assistants`, `Genie Logiciel`,
+> **Redéployé à neuf le 2026-09-12** (nouvelle installation Nextcloud
+> complète lors de la migration disque) — admin, groupfolders et les 4 Team
+> Folders reconfigurés depuis zéro, skeleton désactivé, comme décrit
+> ci-dessous.
+
+Groupes créés (6) : `Etudiants`, `Professeurs`, `Assistants`, `Genie Logiciel`,
 `Intelligence Artificielle`, `Systemes Informatiques`.
 
-Team Folders (dossiers de cours partagés) :
-| Dossier | ID | Groupe filière | Profs/Assistants |
-|---|---|---|---|
-| Cours-Genie-Logiciel | 1 | `Genie Logiciel: read` | `Professeurs/Assistants: read, write` |
-| Cours-Intelligence-Artificielle | 2 | idem | idem |
-| Cours-Systemes-Informatiques | 3 | idem | idem |
+Team Folders (4) :
+| Dossier | Groupe filière | Profs/Assistants |
+|---|---|---|
+| Cours-Genie-Logiciel | `Genie Logiciel: read` | `Professeurs/Assistants: read, write` |
+| Cours-Intelligence-Artificielle | idem | idem |
+| Cours-Systemes-Informatiques | idem | idem |
+| **Communautaire** | écriture ouverte à `Etudiants`/`Professeurs`/`Assistants` | idem (tous rôles, voir section 4) |
 
-Règle de permission : **étudiants en lecture seule, profs/assistants en
-lecture + écriture**, sur les 3 dossiers.
+Règle de permission sur les 3 dossiers `Cours-*` : **étudiants en lecture
+seule, profs/assistants en lecture + écriture**. `Communautaire` est ouvert
+en écriture à tous les rôles (dépôt libre, voir DECISIONS.md D-2026-09-04-02).
 
 Les fichiers de bienvenue Nextcloud (skeleton) sont **désactivés**
 (`skeletondirectory` vidé) — les nouveaux comptes démarrent avec un espace vide.
@@ -203,130 +221,120 @@ Les fichiers de bienvenue Nextcloud (skeleton) sont **désactivés**
 
 ## 7. Fonctionnalités déjà implémentées et validées
 
+**Testées de bout en bout en conditions réelles le 2026-09-12** (après la
+migration disque, voir `JOURNAL.md`) :
 - Inscription par matricule → attribution auto du rôle/filière/quota,
   création du compte MySQL + Nextcloud + groupe.
 - Connexion (JWT), déconnexion.
 - Explorateur de fichiers personnel (liste, upload avec progression et
-  **annulation** via AbortController, download, créer dossier, supprimer).
+  **annulation** via AbortController, download, créer dossier, dossiers).
+- **Corbeille** (B1) : lister, restaurer, purger un élément confirmés
+  fonctionnels.
 - Module Soumissions complet : création de devoir (prof/assistant), dépôt
   (étudiant), consultation + téléchargement des rendus (prof/assistant, via
   lecture disque directe en lecture seule).
-- Dossiers de cours partagés par filière avec permissions différenciées.
+- Dossiers de cours partagés par filière avec permissions différenciées
+  (mais voir bug Axe F5 : l'onglet "Cours partagés" redirige actuellement
+  vers "Mes fichiers" au lieu de s'afficher).
 - Dashboard avec quota réel, stats réelles, dossiers partagés réels.
-- Interface responsive (empilement mobile sous 768px).
-- Sauvegarde : dépôt Git privé sur GitHub, snapshots ZFS, script de
-  démarrage automatique (`holocron-boot.sh`) enregistré en POSTINIT TrueNAS.
+- **Espace communautaire** (D1) : dépôt avec image de couverture, fiche
+  détail, téléchargement, compteur de téléchargements confirmés
+  fonctionnels.
+- **Panel Admin** (D2) : accessible, 5 onglets (Utilisateurs, Matricules,
+  Administrateurs, Dossiers prioritaires, Journaux d'activité) confirmés
+  fonctionnels **visuellement** — tests approfondis action par action pas
+  encore tous faits individuellement.
+- Interface responsive (empilement mobile sous 768px), thème clair/sombre
+  Slate & Citrus (voir section 9 pour le détail de fidélité par écran).
+- Sauvegarde : dépôt Git privé sur GitHub (le `git clone` a fonctionné pour
+  la migration du 2026-09-12, contrairement à l'incident de juillet),
+  snapshots ZFS (dernier : `Holocron_sith@systeme-complet-2026-09-12`),
+  script de démarrage automatique (`holocron-boot.sh`) enregistré en
+  POSTINIT TrueNAS.
 
-## 8. Fonctionnalités PAS encore implémentées (à faire)
+**Codées et déployées, pas explicitement re-testées action par action cette
+semaine** (mais faisant partie du même build validé globalement) :
+- Suppression équilibrée (étudiant supprime ses propres fichiers uniquement).
+- Téléchargement direct des gros fichiers (lecture disque, espace personnel).
+- API de changement de mot de passe.
 
-Voir le détail et l'ordre dans `ROADMAP.md`. Liste de référence :
-- Corbeille (API trashbin Nextcloud) — **backend codé le 2026-09-04**
-  (`GET/POST/DELETE /files/trash*`), pas encore déployé/testé en conditions
-  réelles, pas d'écran frontend (attend la maquette Slate & Citrus).
-- Suppression équilibrée (étudiant supprime ses propres fichiers uniquement)
-  — **codé le 2026-09-04** (route + frontend), pas encore déployé/testé en
-  conditions réelles.
-- API de changement de mot de passe — **codée le 2026-09-04**
-  (`POST /api/auth/change-password`), formulaire Settings branché, pas
-  encore déployé/testé en conditions réelles.
-- Téléchargement direct des gros fichiers — **codé le 2026-09-04** (lecture
-  disque directe pour l'espace personnel dans `fileController.downloadFile`),
-  pas encore testé en conditions réelles.
-- Interface d'administration web (panel admin avancé) — backend codé le
-  2026-09-04, **frontend construit le 2026-09-05**
-  (`components/AdminPanel.jsx`, desktop uniquement), pas testé en
-  conditions réelles.
-- Espace libre communautaire (dépôt ouvert : cours, logiciels, médias) —
-  backend codé le 2026-09-04, **frontend construit le 2026-09-05**
-  (`components/CommunitySpace.jsx`, desktop uniquement, sans actions de
-  modération), pas testé en conditions réelles ; Team Folder Nextcloud
-  `Communautaire` pas encore créé côté serveur (D1.8, action manuelle
-  restante).
-- Notifications (cloche), page stockage dédiée
-- Nom de domaine local (`holocron.local`)
-- Redondance renforcée (miroir ZFS, snapshots planifiés, SMART)
-- *(entre parenthèses, long terme)* Assistant IA local (Ollama)
-- *(entre parenthèses, long terme)* Migration vers le supercalculateur universitaire
+## 8. Fonctionnalités PAS encore implémentées / correctifs connus (à faire)
 
-## 9. Refonte d'interface en cours
+Voir le détail et l'ordre dans `ROADMAP.md` (Axe B0 et Axe F, retour d'usage
+du 2026-09-12). Liste de référence :
+- **[Priorité haute] B0 — Rollback dans `register` si Nextcloud échoue.**
+  Bug d'architecture actif : des comptes MySQL fantômes se créent en
+  silence si la création Nextcloud échoue après l'insertion MySQL — voir
+  piège #13 ci-dessous et DECISIONS.md D-2026-09-12-01.
+- Axe F (8 points remontés après le premier usage réel du 2026-09-12) :
+  texte "Bientôt disponible" resté figé sur le Dashboard, navigation
+  Explorateur (fil d'Ariane + bouton retour), vraies prévisualisations de
+  fichiers, sélection multiple + suppression groupée, bug redirection
+  "Cours partagés", **taxonomie Espace communautaire entièrement
+  dynamique** (le plus structurant), dossiers prioritaires invisibles dans
+  le catalogue, descriptions d'aide sur le Panel Admin.
+- Notifications (cloche), page stockage dédiée.
+- Nom de domaine local (`holocron.local`).
+- Redondance renforcée (miroir ZFS, snapshots planifiés, SMART) — toujours
+  un seul disque en stripe, aucune redondance depuis la migration du 2026-09-12.
+- *(entre parenthèses, long terme)* Assistant IA local (Ollama).
+- *(entre parenthèses, long terme)* Migration vers le supercalculateur universitaire.
 
-Une refonte complète de l'interface (login → toutes les fonctionnalités) est
-en cours via Claude Design, indépendamment du code existant. Trois
-directions visuelles explorées : **Aurora** (calme/premium), **Meridian**
-(institutionnel/sérieux), **Slate & Citrus** (épuré/pro 2026). Chaque
-direction supporte un mode clair ET sombre réversible. Voir
-`Prompts_ClaudeDesign_3_Directions.md` pour les prompts, et la section
-« Direction visuelle retenue » ci-dessous une fois le choix fait.
+## 9. Refonte d'interface
 
-**Direction visuelle retenue :** **Slate & Citrus** — fond gris vrai (`#0B0B0C`
-sombre / `#FAFAFA` clair), surfaces sans bordure (élévation par luminosité
-uniquement), un seul accent citron `#C4F042` utilisé avec parcimonie (actions
-principales, indicateurs actifs), typographie minimaliste (Inter), coins
-arrondis discrets. Validée sur : dashboard étudiant, connexion (flux 3 étapes
-par matricule), explorateur de fichiers (avec upload + annulation), panel
-admin (table utilisateurs), paramètres (profil + mot de passe). Restent à
-compléter en cette même direction : Soumissions (étudiant + prof), Cours
-partagés, Corbeille, dashboards Professeur/Admin, toutes les versions mobile
-(390px), et les états chargement/vide/erreur — voir
-`Prompt_Completion_Slate_Citrus.md`.
+Refonte complète de l'interface (login → toutes les fonctionnalités) menée
+via Claude Design, en parallèle du code. Trois directions visuelles
+explorées : **Aurora** (calme/premium), **Meridian** (institutionnel/sérieux),
+**Slate & Citrus** (épuré/pro 2026) — chacune en clair ET sombre réversible.
 
-**Architecture d'information retenue :** 3 expériences distinctes par rôle
-(étudiant / professeur-assistant / admin), navigation adaptative (barre
-latérale desktop, barre inférieure + menu mobile). Priorité mobile et
-desktop à égalité (pas de mobile-first strict).
+**Direction retenue : Slate & Citrus** — fond gris vrai (`#0B0B0C` sombre /
+`#FAFAFA` clair), surfaces sans bordure (élévation par luminosité
+uniquement), un seul accent citron `#C4F042` utilisé avec parcimonie,
+typographie minimaliste (Inter), coins arrondis discrets. **C'est
+maintenant l'interface réellement en production** (voir ci-dessous — pas
+seulement une maquette validée).
 
-**Avancement des maquettes (Slate & Citrus, Claude Design) :**
-- ✅ Fait : Dashboard étudiant, Connexion, Explorateur, Panel Admin (base),
-  Paramètres, le module complet **Espace communautaire** (Catalogue,
-  Fiche détail, Formulaire de dépôt, Modération admin — `Canvas.dc.html`),
-  les **3 onglets Panel Admin avancé** (Administrateurs, Dossiers
-  prioritaires, Journaux d'activité — `Canvas-2.dc.html`, voir
-  DECISIONS.md D-2026-09-04-05/06/07), et le canvas **"Core Modules"**
-  (validé par Victoire le 2026-09-04) : Dashboard, Connexion, Explorateur,
-  Soumissions (étudiant + prof), Cours partagés, Corbeille, Paramètres,
-  Panel Admin (Utilisateurs + Matricules) — desktop 1440px **ET** mobile
-  390px, clair + sombre.
-- ⬜ Pas fait côté maquette : dashboards Professeur/Admin dédiés (le canvas
-  "Core Modules" ne couvre que le dashboard étudiant), mobile de l'Espace
-  communautaire, états chargement/vide/erreur génériques partout.
-- Bug de nav corrigé : entrée "Administration" dédiée dans la barre
-  latérale (ne surligne plus "Paramètres" par erreur).
+**Avancement des maquettes (Claude Design) :** Dashboard étudiant, Connexion,
+Explorateur, Panel Admin (base + les 3 onglets avancés), Paramètres, module
+Espace communautaire complet, et le canvas **"Core Modules"** (validé par
+Victoire le 2026-09-04 : Dashboard, Connexion, Explorateur, Soumissions,
+Cours partagés, Corbeille, Paramètres, Panel Admin Utilisateurs/Matricules —
+desktop 1440px **et** mobile 390px, clair + sombre). Pas fait côté
+maquette : dashboards Professeur/Admin dédiés, mobile de l'Espace
+communautaire, états chargement/vide/erreur génériques partout.
 
-**Avancement dans le CODE RÉEL (`frontend/`) — distinct de l'avancement des
-maquettes ci-dessus, à ne pas confondre :**
-- Jusqu'au 2026-09-04, le frontend en production tournait entièrement sur
-  l'ancienne palette "Nebula Dark" : aucune des 3 directions explorées
-  n'avait jamais été intégrée au code, malgré les maquettes déjà validées
-  depuis le 12 juillet. Les deux avancements (maquette / code) avaient
-  divergé sans que ça saute aux yeux dans ce fichier — piège à surveiller à
-  l'avenir : une maquette "faite" ne veut pas dire "en production".
-- ✅ **Depuis le 2026-09-04** : `Dashboard.jsx` réécrit sur les tokens
-  Slate & Citrus réels (`frontend/src/theme/tokens.js`, extraits du fichier
-  source `Core Modules.dc.html`), bascule clair/sombre fonctionnelle.
-  Fidèles à la source (desktop + mobile) : **Accueil**, **Corbeille**.
-  Fonctionnels mais retokenisés seulement (pas reconstruits pixel-exact
-  depuis le canvas) : Explorateur, Soumissions, Cours partagés (nouvel
-  onglet), Paramètres.
-- ✅ **Depuis le 2026-09-05** : `Login.jsx` (fidèle à la source, flux 3
-  étapes) et `Register.jsx` (extrapolé, pas de maquette dédiée) réécrits.
-  `components/CommunitySpace.jsx` (D1.9 : catalogue avec **vraies
-  vignettes de couverture** et **actions de modération**, fiche détail,
-  dépôt — desktop) et `components/AdminPanel.jsx` (D2.5+base : 5 onglets —
-  Administrateurs, Dossiers prioritaires, Journaux d'activité,
-  **Utilisateurs**, **Matricules** — desktop, filtrés par permission réelle)
-  construits et branchés sur l'API réelle. `GET /api/users/profile` expose
-  `is_admin`/`admin_level`/`permissions`. Explorateur en vue Liste par
-  défaut (fidèle au canvas) avec bascule Grille ; statut "En retard" sur
-  les Soumissions étudiant.
-- ⬜ Pas construits ou incomplets : toute version mobile d'Espace
-  communautaire/Panel Admin/Connexion (étape 1 seule côté Connexion) —
-  reste responsive mais pas recomposé selon des maquettes mobile
-  spécifiques ; pixel-fidélité complète de Cours partagés/Paramètres
-  (vérifiés proches de la source, pas retouchés) ; sélecteur de filière et
-  compteur de ressources pour les dossiers prioritaires ; filtre "par
-  utilisateur" des journaux d'activité (le backend attend un id, pas un
-  nom) ; onglet "Espace communautaire" du Panel Admin (modération en table,
-  distincte des actions déjà dans `CommunitySpace`).
+**Avancement dans le CODE RÉEL (`frontend/`) — déployé en production depuis
+le 2026-09-12 :**
+- ⚠️ **Piège historique à retenir** : jusqu'au 2026-09-04, le frontend en
+  production tournait encore entièrement sur l'ancienne palette "Nebula
+  Dark", malgré des maquettes Slate & Citrus validées depuis juillet — une
+  maquette "faite" ne veut pas dire "en production". Ne plus reproduire cet
+  écart : toujours vérifier ce qui tourne réellement, pas seulement ce qui
+  est conçu.
+- ✅ Réécrit sur les tokens Slate & Citrus réels (`frontend/src/theme/tokens.js`,
+  extraits de `Core Modules.dc.html`), bascule clair/sombre fonctionnelle
+  (persistée en `localStorage`). Fidèles à la source (desktop + mobile) :
+  **Accueil**, **Corbeille**. Retokenisés mais pas reconstruits pixel-exact
+  depuis le canvas : Explorateur (vue Liste par défaut + bascule Grille,
+  ajouté le 2026-09-05), Soumissions (statut "En retard" ajouté), Cours
+  partagés, Paramètres.
+- ✅ `Login.jsx` (fidèle à la source, flux 3 étapes) et `Register.jsx`
+  (extrapolé, pas de maquette dédiée) réécrits.
+  `components/CommunitySpace.jsx` (catalogue avec vraies vignettes de
+  couverture, actions de modération, fiche détail, dépôt) et
+  `components/AdminPanel.jsx` (5 onglets : Administrateurs, Dossiers
+  prioritaires, Journaux d'activité, Utilisateurs, Matricules, filtrés par
+  permission réelle) construits et branchés sur l'API réelle.
+  `GET /api/users/profile` expose `is_admin`/`admin_level`/`permissions`.
+- ⬜ Pas construits ou incomplets, restent ouverts (voir `ROADMAP.md` Axe F
+  pour le détail priorisé) : toute version mobile dédiée d'Espace
+  communautaire/Panel Admin/Connexion (étape 1 seule) — reste responsive
+  mais pas recomposé selon des maquettes mobile spécifiques ;
+  pixel-fidélité complète de Cours partagés/Paramètres ; vraies
+  prévisualisations de fichiers dans l'Explorateur (Axe F3) ; taxonomie
+  communautaire dynamique (Axe F6) ; onglet "Espace communautaire" dédié du
+  Panel Admin (table de modération séparée, jugée redondante avec la
+  modération déjà présente dans `CommunitySpace`).
 
 ---
 
@@ -364,6 +372,58 @@ maquettes ci-dessus, à ne pas confondre :**
     panne disque de juillet 2026.
 12. Fichiers créés en root via Shell → toujours
     `chown -R truenas_admin:truenas_admin` avant tout transfert SFTP.
+13. **`register` (création de compte) n'a PAS de rollback** si la création
+    du compte Nextcloud échoue après l'insertion MySQL. Résultat : un
+    utilisateur "existe" en base (`users`) mais pas côté Nextcloud —
+    connexion possible mais toute opération fichier échoue en boucle
+    (401 puis 429 bruteforce). **Bug d'architecture non corrigé** — voir
+    `ROADMAP.md` Axe B0, à corriger en priorité (transaction ou vérification
+    + suppression automatique en cas d'échec Nextcloud). En attendant, un
+    compte fantôme se nettoie à la main :
+    ```sql
+    DELETE FROM community_resources WHERE uploader_id=(SELECT id FROM users WHERE matricule='X');
+    DELETE FROM users WHERE matricule='X';
+    ```
+    (vérifier les FK dépendantes avant, `community_resources` notamment).
+14. **Nextcloud a son propre bruteforce protection** par IP ET par
+    username, indépendant de tout ce qu'on configure. Un 401 répété (ex.
+    mot de passe périmé) dégénère vite en 429 qui bloque même les requêtes
+    ensuite valides. Diagnostic : différencier un vrai 401 (mauvais
+    identifiants) d'un 429 (bloqué temporairement) AVANT de conclure. Reset
+    ciblé : `occ security:bruteforce:reset <IP>` — mais reset seul ne suffit
+    pas si la cause (mauvais mot de passe) n'est pas corrigée : le cycle
+    401→429 repart aussitôt.
+15. **Après un `docker compose down && up` (recréation complète, pas un
+    simple `restart`), les IP internes des conteneurs changent** (nouveau
+    réseau Docker) et les règles **NAT iptables** peuvent se désynchroniser
+    de l'IP réelle du conteneur — symptôme : `curl` externe donne
+    "No route to host" alors que le conteneur répond en interne
+    (`docker exec <c> curl localhost` fonctionne). Diagnostic :
+    `docker inspect <conteneur> | grep IPAddress` vs
+    `iptables -t nat -L DOCKER -n | grep <port>` — si les IP ne
+    correspondent pas, faire `docker compose down && up` (pas `restart`)
+    sur la stack concernée pour régénérer proprement le NAT.
+16. **Le mot de passe admin Nextcloud n'est PAS forcément celui du
+    fichier `docker-compose.yml`** (`NEXTCLOUD_ADMIN_PASSWORD`) si
+    Nextcloud a déjà été installé une fois avec une autre valeur — la
+    variable d'environnement ne s'applique qu'à la création initiale du
+    compte. Après une reconstruction de disque, **toujours vérifier en
+    CLI** avant de supposer :
+    ```bash
+    curl -s -H "OCS-APIREQUEST: true" -o /dev/null -w "%{http_code}\n" \
+      -u "admin:<mdp_a_tester>" "http://<ip>:8080/ocs/v1.php/cloud/users?format=json"
+    ```
+    (200 = bon mot de passe ; 401 = faux ; 412 = header OCS manquant, pas
+    un souci d'identifiants ; 429 = bruteforce, pas concluant).
+17. **Un routeur Express monté sur un préfixe large (`app.use('/api', ...)`)
+    intercepte tout ce qui suit ce préfixe, y compris des routes définies
+    plus bas dans `index.js`.** Découvert le 2026-09-12 :
+    `communityRoutes` monté sur `/api` interceptait `/api/health` définie
+    plus bas dans le fichier, renvoyant 401 au lieu du statut attendu.
+    Toujours définir les routes "globales" sans auth (`/api/health`) avant
+    tout `app.use(...)` de routeur à préfixe large, ou donner à ce dernier
+    un préfixe plus spécifique (`/api/community` par exemple, au lieu de
+    `/api`). **Pas encore corrigé dans le code** — à faire par Claude Code.
 
 ---
 
@@ -371,9 +431,11 @@ maquettes ci-dessus, à ne pas confondre :**
 
 Trois niveaux indépendants, tous actifs :
 1. **Git** — dépôt privé GitHub (`VictoireNdala/gougoul-holocron`), commit
-   après chaque session de modification.
+   après chaque session de modification. **Validé en conditions réelles** :
+   la migration du 2026-09-12 a récupéré le code par simple `git clone`,
+   sans reconstruction manuelle (contrairement à l'incident de juillet).
 2. **Snapshots ZFS** — sur le pool `Holocron_sith`, à prendre après chaque
-   étape stable.
+   étape stable. Dernier snapshot : `Holocron_sith@systeme-complet-2026-09-12`.
 3. **Copie PC ↔ serveur bidirectionnelle** — ne plus se fier au seul push
    SFTP ; vérifier régulièrement que le code serveur redescend vers le PC.
 
@@ -388,7 +450,12 @@ Trois niveaux indépendants, tous actifs :
 - Design d'interface : **Claude Design**, piloté par des prompts écrits.
 - Déploiement : VS Code + extension SFTP (`remotePath:
   /mnt/Holocron_sith/webapp`, `uploadOnSave: false`) → rebuild Docker côté
-  serveur → commit Git.
+  serveur → commit Git. Rester sur l'onglet Shell TrueNAS pendant un build
+  long (naviguer ailleurs tue le process en cours, voir incident du
+  2026-09-12).
 - Travail pas à pas, une commande/tâche validée avant la suivante.
-- Ce système de fichiers `.md` (`docs/`) est la mémoire partagée entre tous
-  les outils — à tenir à jour à chaque session.
+- Ce système de fichiers `.md` (`contexte projet/`) est la mémoire partagée
+  entre tous les outils — à tenir à jour à chaque session, en **fusionnant**
+  les mises à jour plutôt qu'en écrasant le fichier existant (voir incident
+  du 2026-09-12 où une régénération partielle a fait perdre plusieurs jours
+  de documentation avant d'être détectée et réparée).

@@ -7,6 +7,114 @@
 
 ---
 
+## 2026-09-12 (suite) — Premier retour d'usage réel + repromotion admin
+
+**Contexte :** après la migration disque de la veille/du matin, premier
+usage réel et prolongé du système par Victoire (Dashboard, Explorateur,
+Cours partagés, Espace communautaire, Panel Admin).
+
+**Repromotion admin :** le compte `etu_20244936` avait perdu ses droits
+`is_admin`/`admin_level` (le compte MySQL a été recréé plusieurs fois
+pendant la migration de la veille, donc reparti avec les valeurs par
+défaut). Repromue en `super` admin manuellement en base — Panel Admin de
+nouveau accessible, 5 onglets confirmés fonctionnels visuellement.
+
+**8 points remontés, structurés en Axe F de `ROADMAP.md` (F1 à F8) :**
+- F1 : texte "bientôt disponible" figé sur le Dashboard (résidu déjà noté
+  la veille, toujours pas corrigé).
+- F2 : navigation Explorateur à améliorer — décision actée en
+  `DECISIONS.md` D-2026-09-12-02 (fil d'Ariane + bouton retour, appuyé sur
+  une recherche des bonnes pratiques 2026).
+- F3 : vraies prévisualisations de fichiers dans l'Explorateur (images,
+  vidéos, PDF...) au lieu d'icônes génériques — même technique que la
+  recherche Preview Nextcloud faite le 2026-09-04 pour l'Espace
+  communautaire, à réutiliser ici.
+- F4 : sélection multiple + suppression groupée dans l'Explorateur
+  (les autres actions groupées type partage sont explicitement reportées).
+- F5 : bug — l'onglet "Cours partagés" redirige vers "Mes fichiers" au
+  lieu de s'afficher (même vide).
+- F6 : **le plus structurant** — la taxonomie de l'Espace communautaire
+  (facultés/filières/niveaux/catégories) doit devenir entièrement
+  dynamique et gérable en CRUD depuis le Panel Admin ; les valeurs
+  utilisées jusqu'ici n'étaient qu'un échantillon, pas une liste figée.
+  Décision actée en D-2026-09-12-03.
+- F7 : bug — un dossier prioritaire créé dans le Panel Admin
+  ("Sciences Informatiques > Genie Logiciel > L1") n'apparaît nulle part
+  dans le catalogue de l'Espace communautaire ; le câblage catalogue ↔
+  `community_priority_folders` est à vérifier/corriger.
+- F8 : ajouter de courtes descriptions d'usage sur les onglets du Panel
+  Admin (et par extension, ailleurs où c'est utile).
+
+**Statut :** tout est dans `ROADMAP.md` Axe F, ordre de travail suggéré
+mis à jour (B0 d'abord, puis F1/F5 rapides, puis le reste de F, F6 en
+dernier dans l'axe vu sa taille). Rien encore implémenté à ce stade — à
+donner à Claude Code.
+
+---
+
+## 2026-09-11/12 — Migration vers un nouveau disque + résolution de plusieurs incidents en cascade
+
+**Contexte :** le disque précédent (emprunté à un ami dans l'urgence) a été
+rendu/retiré. Migration complète vers un nouveau disque, en profitant du
+fait que le code est désormais sur GitHub (plus de reconstruction manuelle
+comme en juillet).
+
+**Migration infrastructure (réussie) :**
+- Ancien pool `Holocron_sith` exporté proprement (disque déjà absent).
+- Nouveau pool `Holocron_sith` recréé via l'interface web (stripe, 1 disque
+  ~465 Go — toujours pas de redondance).
+- Code cloné directement depuis GitHub (`git clone` — la sauvegarde a
+  fonctionné, contrairement à l'incident de juillet).
+- Confirmation que Claude Code avait bien poussé l'Axe B/C/D (Corbeille,
+  mot de passe, Espace communautaire, Panel Admin) avant cette session —
+  tables MySQL correspondantes présentes après clone.
+- Build backend/frontend refait (un premier build interrompu par une
+  navigation accidentelle hors de l'onglet Shell — le Shell web TrueNAS tue
+  le process en cours si on change d'onglet ; toujours rester sur l'onglet
+  pendant un build long).
+- Stack Nextcloud redéployée à neuf (nouvelle installation complète :
+  admin, groupfolders, 6 groupes, 4 Team Folders dont le nouveau
+  `Communautaire`, skeleton désactivé) — voir `CONTEXT.md` section 6.
+
+**Incidents résolus en cascade (tous documentés dans `CONTEXT.md` pièges
+connus #13 à #16) :**
+1. Route `/api/health` renvoyait 401 — un routeur (`communityRoutes`) monté
+   sur `/api` interceptait tout avant la définition de la route health,
+   plus bas dans `index.js`. Fix : remonter `/api/health` avant tous les
+   `app.use(...)`. **Signalé à corriger côté source par Claude Code** (le
+   montage de `communityRoutes` sur `/api` reste trop large).
+2. Nextcloud injoignable en HTTP ("No route to host") après un redémarrage
+   Docker complet — désynchronisation des règles NAT iptables (IP interne
+   du conteneur changée, NAT pointant vers l'ancienne IP). Fix : recréation
+   complète de la stack (`down` puis `up`, pas un simple `restart`).
+3. Cycle 401 → 429 en boucle sur les comptes utilisateurs : le mot de passe
+   admin réel de cette installation Nextcloud (`gougoul123`) ne correspondait
+   plus à celui documenté (`TheGougoulHolocron8@`) ni à celui du
+   `docker-compose.yml` webapp — corrigé dans les deux. **`CONTEXT.md` mis
+   à jour avec le mot de passe réel.**
+4. **Découverte du bug de fond** : `register` n'a pas de rollback si la
+   création Nextcloud échoue après l'écriture MySQL → plusieurs comptes
+   fantômes créés pendant les diagnostics ci-dessus, causant une bonne
+   partie du temps de debug (401/429 confus avec les incidents 1-3 plutôt
+   que reconnus comme "le compte n'existe juste pas côté Nextcloud"). Voir
+   `DECISIONS.md` D-2026-09-12-01 — **à corriger par Claude Code, priorité
+   haute (Axe B0 de `ROADMAP.md`)**.
+
+**Résultat final :** système entièrement fonctionnel, testé de bout en
+bout — inscription, quota, explorateur (upload/download/dossiers),
+Corbeille (restaurer/purger), Espace communautaire (dépôt avec image de
+couverture, fiche détail, compteur de téléchargements). Snapshot ZFS pris
+(`Holocron_sith@systeme-complet-2026-09-12`).
+
+**Ce qui reste en suspens :**
+- Le texte "Espace communautaire — Bientôt disponible" sur le Dashboard
+  est un résidu figé côté frontend, à retirer (la fonctionnalité existe et
+  marche, seul cet encart d'accueil ment).
+- Le fix B0 (rollback register) n'est pas encore implémenté.
+- Toujours aucune redondance disque (1 seul disque, stripe).
+
+---
+
 ## 2026-09-05 (suite 2) — Filière/compteur dossiers prioritaires, filtre utilisateur des logs, mobile Espace communautaire/Panel Admin
 
 **Contexte :** Victoire demande de construire "tout ce que tu es en mesure

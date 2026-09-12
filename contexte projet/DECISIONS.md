@@ -9,6 +9,72 @@
 
 ---
 
+### D-2026-09-12-02 — Navigation de l'Explorateur : fil d'Ariane + bouton Retour (hybride)
+
+**Contexte :** Victoire trouve la navigation actuelle (fil d'Ariane seul)
+insuffisante pour remonter dans l'arborescence de dossiers.
+
+**Décision :** garder le fil d'Ariane (utile pour sauter directement à un
+niveau donné) et ajouter un **bouton "Retour" explicite** en haut de la
+liste, complémentaire. C'est le pattern recommandé par les bonnes
+pratiques 2026 pour la navigation en profondeur : le fil d'Ariane seul
+convainc mal au-delà de 2-3 niveaux, le bouton retour seul perd l'aperçu
+du chemin — les deux ensemble couvrent les deux besoins.
+
+**Alternative écartée :** remplacer entièrement le fil d'Ariane par un
+bouton retour seul — écarté, on perdrait la possibilité de sauter
+directement à un ancêtre plus lointain.
+
+---
+
+### D-2026-09-12-03 — Taxonomie de l'Espace communautaire : entièrement dynamique, pas figée
+
+**Contexte :** les facultés/filières/niveaux/catégories utilisés jusqu'ici
+(Sciences Informatiques, Genie Logiciel/IA/Systemes, L1-L5,
+Cours/Logiciel/Media/Autre) n'étaient qu'un échantillon de démonstration.
+Victoire veut pouvoir accueillir d'autres facultés de l'université et
+ajuster les catégories/niveaux sans intervention développeur.
+
+**Décision :** ces 4 taxonomies (facultés, filières, niveaux, catégories)
+deviennent gérables en CRUD depuis le Panel Admin (nouvel onglet ou
+section "Taxonomie"), lues dynamiquement par le frontend (formulaire de
+dépôt, filtres du catalogue) — plus aucune valeur en dur côté code, à
+l'exception de la catégorie `Logiciel` qui reste un identifiant spécial
+reconnu par la logique de badges de vérification (D-2026-09-04-02) même
+si son libellé peut être modifié.
+
+**Alternative écartée :** ajouter les nouvelles facultés/catégories
+au cas par cas dans le code (comme fait initialement). Écartée
+explicitement par Victoire — l'échantillon donné ne devait pas être
+interprété comme une liste figée.
+
+**Conséquence :** voir `ROADMAP.md` Axe F6 pour le détail d'implémentation
+— c'est le step le plus structurant du lot du 12/09, à traiter avec soin.
+
+---
+
+### D-2026-09-12-01 — À FAIRE : rollback obligatoire dans `register` si la création Nextcloud échoue
+
+**Contexte :** migration vers un nouveau disque (panne du précédent
+disque emprunté). Lors de la reconstruction, plusieurs inscriptions ont
+laissé des comptes MySQL "fantômes" (créés en base, jamais créés côté
+Nextcloud) suite à des échecs transitoires (Nextcloud injoignable,
+mauvais mot de passe admin, bruteforce protection). Ces comptes se
+connectent normalement mais toute opération fichier échoue en boucle
+(401 → 429), consommant un temps de diagnostic disproportionné à
+retrouver la vraie cause à chaque fois.
+
+**Décision (à implémenter — PAS encore fait) :** la route `register` doit
+soit englober la création MySQL + Nextcloud dans une logique
+transactionnelle (si Nextcloud échoue, supprimer la ligne MySQL tout de
+suite), soit vérifier au minimum à la prochaine connexion que le compte
+Nextcloud existe réellement et le recréer/alerter si absent.
+
+**Statut :** ⬜ pas fait — ajouté à `ROADMAP.md`. Nettoyage manuel en
+attendant (voir `CONTEXT.md` piège #13).
+
+---
+
 ### D-2026-07-14-01 — Refonte complète de l'interface, sans s'attacher à l'existant
 
 **Contexte :** après la soutenance, décision de revoir l'expérience
