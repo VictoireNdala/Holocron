@@ -256,13 +256,7 @@ Les notes de reconstruction mentionnent plusieurs points à finaliser ou à vér
 
 ## Conclusion
 
-Gougoul Holocron est un projet de plateforme académique intégrant stockage, gestion des devoirs, soumissions, communauté, quotas et administration. Il s’agit d’une base solide pour un système de gestion de fichiers et d’activités campus, avec une architecture moderne basée sur Docker, React et Node.js.
+Gougoul Holocron est un projet de plateforme académique intégrant stockage, gestion des devoirs, 
+soumissions, communauté, quotas et administration. Il s’agit d’une base solide pour un système 
+de gestion de fichiers et d’activités campus, avec une architecture moderne basée sur Docker, React et Node.js.
 
----
-
-Si vous souhaitez, je peux maintenant vous proposer :
-
-1. une version README plus courte et plus élégante,
-2. une version README orientée Open Source / GitHub public,
-3. une version README plus technique pour développeurs,
-4. ou même un README complet en anglais.
