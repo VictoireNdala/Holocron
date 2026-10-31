@@ -10,6 +10,16 @@ Holocron est une plateforme académique de gestion de fichiers et de soumissions
 
 Le projet intègre des fonctionnalités de gestion des utilisateurs, des filières, des devoirs, des soumissions, des ressources communautaires, des quotas, ainsi qu’un espace administrateur avancé.
 
+## Captures d'écran
+
+| Tableau de bord | Explorateur de fichiers |
+|---|---|
+| ![Tableau de bord](docs/screenshots/dashboard.png) | ![Explorateur de fichiers](docs/screenshots/explorateur.png) |
+
+| Espace communautaire | Administration |
+|---|---|
+| ![Dépôt d'une ressource communautaire](docs/screenshots/espace-communautaire.png) | ![Panel d'administration — dossiers prioritaires](docs/screenshots/administration.png) |
+
 ## Aperçu du projet
 
 Le système est structuré autour de plusieurs briques :

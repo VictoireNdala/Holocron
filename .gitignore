@@ -21,3 +21,7 @@ boot.log
 # Secrets locaux (voir note ci-dessous)
 .env
 *.local
+
+# Instructions de session (usage local uniquement, pas versionnées)
+CLAUDE.md
+**/CLAUDE.md

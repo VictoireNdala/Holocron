@@ -29,6 +29,8 @@ sans dépendance à Internet. Portail web unique par lequel transitent toutes
 les interactions ; la complexité du stockage (Nextcloud, ZFS) est invisible
 pour l'utilisateur final.
 
+![Tableau de bord Holocron](../docs/screenshots/dashboard.png)
+
 **Porteuse du projet / administratrice système :** Ndala Mwenze Victoire,
 matricule `ETU-20244936`, Génie Logiciel, L2, Faculté des Sciences
 Informatiques.

@@ -324,13 +324,14 @@ Claude Code (build/debug) et Claude Design (UI), sans perdre le fil d'une
 session à l'autre.
 
 **Décision :** créer `docs/CONTEXT.md`, `docs/ROADMAP.md`, `docs/JOURNAL.md`,
-`docs/DECISIONS.md` et `CLAUDE.md` à la racine du dépôt, versionnés avec
-Git, mis à jour à chaque session significative.
+`docs/DECISIONS.md` et un fichier d'instructions de session à la racine
+du dépôt, versionnés avec Git, mis à jour à chaque session significative.
 
-**Conséquence :** avant toute tâche, Claude Code doit lire `CLAUDE.md` (qui
-pointe vers les autres fichiers). Toute décision structurante future doit
-être ajoutée ici, tout changement d'état à `ROADMAP.md`, tout résumé de
-session à `JOURNAL.md`.
+**Conséquence :** avant toute tâche, l'agent de développement doit lire
+le fichier d'instructions de session (qui pointe vers les autres
+fichiers). Toute décision structurante future doit être ajoutée ici,
+tout changement d'état à `ROADMAP.md`, tout résumé de session à
+`JOURNAL.md`.
 
 ---
 
