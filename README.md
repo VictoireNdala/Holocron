@@ -1,39 +1,39 @@
 # Holocron
 
-Holocron est une plateforme académique de gestion de fichiers et de soumissions, conçue pour un environnement campus ou institutionnel. Elle combine :
+Holocron is an academic file and submission management platform, designed for a campus or institutional environment. It combines:
 
-- un frontend React pour l’interface utilisateur,
-- un backend Node.js / Express pour l’API,
-- une base MySQL pour la logique applicative,
-- une intégration Nextcloud pour le stockage, les dossiers partagés et le WebDAV,
-- une orchestration Docker pour le déploiement local ou serveur.
+- a React frontend for the user interface,
+- a Node.js / Express backend for the API,
+- a MySQL database for application logic,
+- a Nextcloud integration for storage, shared folders, and WebDAV,
+- a Docker orchestration for local or server deployment.
 
-Le projet intègre des fonctionnalités de gestion des utilisateurs, des filières, des devoirs, des soumissions, des ressources communautaires, des quotas, ainsi qu’un espace administrateur avancé.
+The project includes features for managing users, academic programs, assignments, submissions, community resources, quotas, as well as an advanced administration space.
 
-## Captures d'écran
+## Screenshots
 
-| Tableau de bord | Explorateur de fichiers |
+| Dashboard | File Explorer |
 |---|---|
-| ![Tableau de bord](docs/screenshots/dashboard.png) | ![Explorateur de fichiers](docs/screenshots/explorateur.png) |
+| ![Dashboard](docs/screenshots/dashboard.png) | ![File Explorer](docs/screenshots/explorateur.png) |
 
-| Espace communautaire | Administration |
+| Community Space | Administration |
 |---|---|
-| ![Dépôt d'une ressource communautaire](docs/screenshots/espace-communautaire.png) | ![Panel d'administration — dossiers prioritaires](docs/screenshots/administration.png) |
+| ![Submitting a community resource](docs/screenshots/espace-communautaire.png) | ![Admin panel — priority folders](docs/screenshots/administration.png) |
 
-## Aperçu du projet
+## Project overview
 
-Le système est structuré autour de plusieurs briques :
+The system is structured around several building blocks:
 
-- authentification et gestion des comptes,
-- validation des matricules,
-- création et suivi des devoirs,
-- dépôt et consultation des soumissions,
-- quotas de stockage et dossiers partagés Nextcloud,
-- espace communautaire avec ressources, catégories et signalements,
-- notifications et journalisation d’activité,
-- administration avec permissions granulaires.
+- authentication and account management,
+- student ID (matricule) validation,
+- assignment creation and tracking,
+- submission upload and review,
+- storage quotas and Nextcloud shared folders,
+- community space with resources, categories, and reports,
+- notifications and activity logging,
+- administration with granular permissions.
 
-## Stack technique
+## Tech stack
 
 ### Frontend
 - React 18
@@ -54,10 +54,10 @@ Le système est structuré autour de plusieurs briques :
 - Docker
 - Docker Compose
 - Nextcloud
-- PostgreSQL pour la base Nextcloud
+- PostgreSQL for the Nextcloud database
 - Redis
 
-## Structure du dépôt
+## Repository structure
 
 ```text
 .
@@ -100,44 +100,44 @@ Le système est structuré autour de plusieurs briques :
 └── README.md
 ```
 
-## Fonctionnalités principales
+## Key features
 
-### Authentification et comptes
-- inscription d’utilisateurs,
-- validation de matricule,
-- stockage de mot de passe Nextcloud,
-- rôles : étudiant, professeur, assistant,
-- gestion des permissions d’administration.
+### Authentication and accounts
+- user registration,
+- student ID (matricule) validation,
+- Nextcloud password storage,
+- roles: student, professor, assistant,
+- administration permission management.
 
-### Gestion des devoirs et soumissions
-- création de devoirs par professeurs/assistants,
-- attribution par filière,
-- soumission unique par étudiant et par devoir,
-- stockage des fichiers de rendu,
-- consultation côté professeur / assistant.
+### Assignment and submission management
+- assignment creation by professors/assistants,
+- assignment by academic program,
+- one submission per student per assignment,
+- submitted file storage,
+- professor / assistant review.
 
-### Espace communautaire
-- ressources partagées par catégorie,
-- filière / niveau / faculté comme dimensions de classification,
-- dossiers prioritaires,
-- signalements des ressources,
-- logique de vérification de contenu.
+### Community space
+- resources shared by category,
+- program / level / faculty as classification dimensions,
+- priority folders,
+- resource reporting,
+- content verification logic.
 
-### Stockage partagé / Nextcloud
-- intégration avec Nextcloud pour les comptes utilisateurs,
-- dossiers partagés,
+### Shared storage / Nextcloud
+- integration with Nextcloud for user accounts,
+- shared folders,
 - quotas,
-- lecture directe des données de Nextcloud côté backend pour certaines opérations métier.
+- direct reading of Nextcloud data on the backend side for certain business operations.
 
 ### Administration
-- journal d’activité,
-- permissions d’admin déléguées,
-- gestion des matricules,
-- supervision des utilisateurs et des ressources.
+- activity log,
+- delegated admin permissions,
+- student ID (matricule) management,
+- user and resource oversight.
 
-## Modèle de données
+## Data model
 
-La base MySQL principale contient notamment les tables suivantes :
+The main MySQL database contains, among others, the following tables:
 
 - `matricules`
 - `users`
@@ -155,34 +155,34 @@ La base MySQL principale contient notamment les tables suivantes :
 - `community_reports`
 - `notifications`
 
-Le fichier `database/init.sql` contient le schéma et les seed de données de démonstration.
+The `database/init.sql` file contains the schema and demo seed data.
 
-## Déploiement
+## Deployment
 
-### Avec Docker Compose
+### With Docker Compose
 
-Le dépôt fournit un `docker-compose.yml` principal pour le stack webapp :
+The repository provides a main `docker-compose.yml` for the webapp stack:
 
 ```bash
 docker compose up -d --build
 ```
 
-Le stack Nextcloud est séparé dans `nexcloud/docker-compose.yml` :
+The Nextcloud stack is separate, in `nexcloud/docker-compose.yml`:
 
 ```bash
 cd nexcloud
 docker compose up -d
 ```
 
-Le script `holocron-boot.sh` est prévu pour gérer un démarrage serveur plus robuste, notamment pour la configuration Docker data-root et un pool de données.
+The `holocron-boot.sh` script is intended to handle a more robust server startup, notably for the Docker data-root configuration and a data pool.
 
-## Démarrage local
+## Local setup
 
-### Prérequis
+### Prerequisites
 - Docker
 - Docker Compose
 - Node.js / npm
-- (pour le développement backend) : accès à une base MySQL locale ou au stack Docker du projet
+- (for backend development) access to a local MySQL database or to the project's Docker stack
 
 ### Backend
 ```bash
@@ -198,14 +198,14 @@ npm install
 npm start
 ```
 
-### Accès par défaut
-- Frontend : http://localhost:3000
-- Backend API : http://localhost:5000
-- Nextcloud : http://localhost:8080
+### Default access
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:5000
+- Nextcloud: http://localhost:8080
 
-## Variables d’environnement
+## Environment variables
 
-Le backend attend des variables telles que :
+The backend expects variables such as:
 
 - `DB_HOST`
 - `DB_USER`
@@ -217,54 +217,51 @@ Le backend attend des variables telles que :
 - `JWT_SECRET`
 - `NC_DATA_DIR`
 
-Les valeurs sont configurées dans `docker-compose.yml` pour un contexte de déploiement local / serveur interne.
+Values are configured in `docker-compose.yml` for a local / internal server deployment context.
 
-## Notes importantes
+## Important notes
 
-- Le projet contient des éléments de configuration et des identifiants liés à un environnement académique interne.
-- Le dépôt inclut des informations sensibles de déploiement ou d’infrastructure (mot de passe, volumes Docker, localisations système).
-- Le fichier `RECONSTRUCTION_ET_DEPLOIEMENT.md` explique en détail la reconstruction du projet après une perte de disque et décrit l’architecture cible / redéploiement.
-- Le projet est encore un projet de développement / reconstruction avec des points à vérifier avant mise en production forte.
+- The project contains configuration elements and credentials tied to an internal academic environment.
+- The repository includes sensitive deployment or infrastructure information (passwords, Docker volumes, system locations).
+- The `RECONSTRUCTION_ET_DEPLOIEMENT.md` file explains in detail the project's reconstruction after a disk loss and describes the target architecture / redeployment.
+- The project is still a development / reconstruction project with points to verify before a hardened production rollout.
 
-## Statut du projet
+## Project status
 
-Le dépôt semble correspondre à un état de reconstruction et de redéploiement d’une application déjà existante, avec :
+The repository appears to correspond to a reconstruction and redeployment state of an already-existing application, with:
 
-- une architecture fonctionnelle définie,
-- des schémas de base de données déjà préparés,
-- une logique métier assez avancée,
-- un besoin de validation et de nettoyage avant production.
+- a defined functional architecture,
+- database schemas already prepared,
+- fairly advanced business logic,
+- a need for validation and cleanup before production.
 
-## Licence
+## License
 
-Distribué sous licence [Apache License 2.0](LICENSE).
+Distributed under the [Apache License 2.0](LICENSE).
 
-## Auteur / propriétaire
+## Author / owner
 
-Le dépôt est hébergé sous le compte GitHub [VictoireNdala](https://github.com/VictoireNdala/Holocron) et est public.
+The repository is hosted under the GitHub account [VictoireNdala](https://github.com/VictoireNdala/Holocron) and is public.
 
-## Développement futur / roadmap
+## Future development / roadmap
 
-Les notes de reconstruction mentionnent plusieurs points à finaliser ou à vérifier, notamment :
+The reconstruction notes mention several points to finalize or verify, notably:
 
-- suppression / gestion avancée des fichiers,
-- changement de mot de passe côté API,
-- branchement complet des dossiers partagés dans le dashboard,
-- amélioration des mécanismes UI/UX,
-- intégration IA locale si nécessaire.
+- advanced file deletion / management,
+- API-side password change,
+- full wiring of shared folders in the dashboard,
+- UI/UX improvements,
+- local AI integration if needed.
 
-## Ressources utiles
+## Useful resources
 
-- `RECONSTRUCTION_ET_DEPLOIEMENT.md` : documentation de reconstruction et redéploiement
-- `database/init.sql` : schéma principal et seeds
-- `docker-compose.yml` : configuration du stack webapp
-- `nexcloud/docker-compose.yml` : configuration du stack Nextcloud
-- `backend/src/index.js` : point d’entrée API
-- `frontend/src/App.jsx` : point d’entrée frontend
+- `RECONSTRUCTION_ET_DEPLOIEMENT.md`: reconstruction and redeployment documentation
+- `database/init.sql`: main schema and seeds
+- `docker-compose.yml`: webapp stack configuration
+- `nexcloud/docker-compose.yml`: Nextcloud stack configuration
+- `backend/src/index.js`: API entry point
+- `frontend/src/App.jsx`: frontend entry point
 
 ## Conclusion
 
-Holocron est un projet de plateforme académique intégrant stockage, gestion des devoirs, 
-soumissions, communauté, quotas et administration. Il s’agit d’une base solide pour un système 
-de gestion de fichiers et d’activités campus, avec une architecture moderne basée sur Docker, React et Node.js.
-
+Holocron is an academic platform project integrating storage, assignment management, submissions, community, quotas, and administration. It is a solid foundation for a campus file and activity management system, with a modern architecture based on Docker, React, and Node.js.
