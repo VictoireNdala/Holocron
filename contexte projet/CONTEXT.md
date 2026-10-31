@@ -14,10 +14,14 @@
 ## 1. Qu'est-ce que Holocron
 
 > **Nom du produit :** le produit s'appelle désormais **Holocron** (renommé
-> depuis "Gougoul Holocron" le 2026-09-04). Le dépôt GitHub
-> (`VictoireNdala/gougoul-holocron`, section 11) contient encore l'ancien
-> nom dans son slug — ne PAS le renommer sans effectuer le changement réel
-> côté GitHub, cela casserait le remote Git configuré partout.
+> depuis "Gougoul Holocron" le 2026-09-04). **Le dépôt GitHub a été
+> renommé le 2026-10-31** : `VictoireNdala/Holocron` (ancien slug
+> `gougoul-holocron`, section 11), remote Git local mis à jour en
+> conséquence. **Le dépôt est désormais PUBLIC** — voir l'avertissement
+> sécurité ajouté en section 11 : plusieurs fichiers versionnés
+> (`docker-compose.yml`, `nexcloud/docker-compose.yml`, `CONTEXT.md`
+> section 5) contiennent des identifiants réels en clair, visibles par
+> quiconque depuis ce changement de visibilité.
 
 Un cloud privé académique de campus : plateforme de partage de ressources
 (fichiers, cours, devoirs) fonctionnant **entièrement sur le réseau local**,
@@ -514,14 +518,36 @@ le 2026-09-12 :**
 ## 11. Stratégie de sauvegarde (post-incident)
 
 Trois niveaux indépendants, tous actifs :
-1. **Git** — dépôt privé GitHub (`VictoireNdala/gougoul-holocron`), commit
-   après chaque session de modification. **Validé en conditions réelles** :
-   la migration du 2026-09-12 a récupéré le code par simple `git clone`,
+1. **Git** — dépôt GitHub **`VictoireNdala/Holocron`** (renommé le
+   2026-10-31, ancien slug `gougoul-holocron` ; **PUBLIC depuis la même
+   date**, voir l'avertissement sécurité ci-dessous), commit après chaque
+   session de modification. **Validé en conditions réelles** : la
+   migration du 2026-09-12 a récupéré le code par simple `git clone`,
    sans reconstruction manuelle (contrairement à l'incident de juillet).
 2. **Snapshots ZFS** — sur le pool `Holocron_sith`, à prendre après chaque
    étape stable. Dernier snapshot : `Holocron_sith@systeme-complet-2026-09-12`.
 3. **Copie PC ↔ serveur bidirectionnelle** — ne plus se fier au seul push
    SFTP ; vérifier régulièrement que le code serveur redescend vers le PC.
+
+> **⚠️ AVERTISSEMENT SÉCURITÉ — dépôt passé en public le 2026-10-31.**
+> Le dépôt contient, versionnés et donc désormais visibles par n'importe
+> qui, des identifiants réels EN CLAIR dans des fichiers suivis par Git :
+> `docker-compose.yml` (mot de passe MySQL root/app, mot de passe admin
+> Nextcloud, `JWT_SECRET`), `nexcloud/docker-compose.yml` (mot de passe
+> Postgres, mot de passe admin Nextcloud), et cette table d'identifiants
+> elle-même (section 5). Rendre le dépôt public **n'efface pas
+> l'historique Git** : même si ces fichiers sont modifiés ou supprimés
+> aujourd'hui, les anciennes valeurs restent consultables dans les commits
+> précédents (`git log -p`) par quiconque. **Action recommandée, non
+> encore faite à ce jour :** faire tourner (changer) TOUS les identifiants
+> listés section 5 (MySQL root, MySQL app, Postgres Nextcloud, admin
+> Nextcloud, `JWT_SECRET`) avant de considérer l'exposition neutralisée —
+> changer la valeur dans le code ne suffit pas tant que les commits
+> passés restent accessibles. Décision à prendre par Victoire (impact
+> opérationnel : rotation = redéploiement + reconnexion de tous les
+> utilisateurs) ; voir aussi `.gitignore` pour isoler ces valeurs du
+> dépôt à l'avenir (ex. via un fichier `.env` non commité) plutôt que de
+> les committer en clair dans `docker-compose.yml`.
 
 ---
 

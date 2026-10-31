@@ -1,6 +1,6 @@
-# Gougoul Holocron
+# Holocron
 
-Gougoul Holocron est une plateforme académique de gestion de fichiers et de soumissions, conçue pour un environnement campus ou institutionnel. Elle combine :
+Holocron est une plateforme académique de gestion de fichiers et de soumissions, conçue pour un environnement campus ou institutionnel. Elle combine :
 
 - un frontend React pour l’interface utilisateur,
 - un backend Node.js / Express pour l’API,
@@ -227,13 +227,11 @@ Le dépôt semble correspondre à un état de reconstruction et de redéploiemen
 
 ## Licence
 
-Aucune licence n’est explicitement définie dans le dépôt pour le moment.
-
-Avant toute publication ou redistribution externe, il est recommandé d’ajouter une licence Open Source adaptée (par exemple MIT, Apache 2.0 ou GPL selon votre cas d’usage).
+Distribué sous licence [Apache License 2.0](LICENSE).
 
 ## Auteur / propriétaire
 
-Le dépôt est actuellement hébergé sous le compte GitHub de l’utilisateur associé au projet et est géré comme un dépôt privé.
+Le dépôt est hébergé sous le compte GitHub [VictoireNdala](https://github.com/VictoireNdala/Holocron) et est public.
 
 ## Développement futur / roadmap
 
@@ -256,7 +254,7 @@ Les notes de reconstruction mentionnent plusieurs points à finaliser ou à vér
 
 ## Conclusion
 
-Gougoul Holocron est un projet de plateforme académique intégrant stockage, gestion des devoirs, 
+Holocron est un projet de plateforme académique intégrant stockage, gestion des devoirs, 
 soumissions, communauté, quotas et administration. Il s’agit d’une base solide pour un système 
 de gestion de fichiers et d’activités campus, avec une architecture moderne basée sur Docker, React et Node.js.
 
